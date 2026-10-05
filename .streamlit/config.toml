@@ -1,0 +1,6 @@
+[server]
+# Límite de subida (MB): controla el coste y la memoria; el audio de OpenAI admite hasta 25 MB.
+maxUploadSize = 30
+
+[browser]
+gatherUsageStats = false

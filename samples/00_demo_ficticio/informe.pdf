@@ -1,0 +1,65 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R 8 0 R 10 0 R] /Count 4 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 241 >>
+stream
+BT /F1 11 Tf 14 TL 50 750 Td (ACME Corp - Informe anual 2025 \(documento FICTICIO para demostracion\)) Tj T* (Carta del presidente: el ejercicio 2025 ha sido solido y estable.) Tj T* (Este documento no procede de ninguna empresa real.) Tj ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
+endobj
+7 0 obj
+<< /Length 210 >>
+stream
+BT /F1 11 Tf 14 TL 50 750 Td (Resultados del ejercicio) Tj T* (Los ingresos alcanzaron 12.300 millones de euros, un 6 por ciento mas que en 2024.) Tj T* (El beneficio neto fue de 1.450 millones de euros.) Tj ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 9 0 R >>
+endobj
+9 0 obj
+<< /Length 275 >>
+stream
+BT /F1 11 Tf 14 TL 50 750 Td (Rentabilidad y balance) Tj T* (El margen operativo se situo en el 18,4 por ciento, frente al 17,1 por ciento del) Tj T* (ejercicio anterior, gracias a la eficiencia de costes. La deuda neta se redujo) Tj T* (hasta 3.200 millones de euros.) Tj ET
+endstream
+endobj
+10 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 11 0 R >>
+endobj
+11 0 obj
+<< /Length 204 >>
+stream
+BT /F1 11 Tf 14 TL 50 750 Td (Perspectivas) Tj T* (La direccion mantiene la guia de ingresos para 2026, con un crecimiento de un digito) Tj T* (medio-alto, y prevé estabilidad del margen operativo.) Tj ET
+endstream
+endobj
+xref
+0 12
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000134 00000 n 
+0000000231 00000 n 
+0000000357 00000 n 
+0000000649 00000 n 
+0000000775 00000 n 
+0000001036 00000 n 
+0000001162 00000 n 
+0000001488 00000 n 
+0000001616 00000 n 
+trailer
+<< /Size 12 /Root 1 0 R >>
+startxref
+1872
+%%EOF
