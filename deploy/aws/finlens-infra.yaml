@@ -8,7 +8,7 @@ Description: >
 Parameters:
   GitHubRepo:
     Type: String
-    Default: raulrodriguezlr/finlens
+    Default: piettro/Master-MIAX-Tarea-Bloque5-Multimodales
     Description: Repositorio (propietario/nombre) autorizado a desplegar.
   GitHubBranch:
     Type: String
