@@ -63,21 +63,26 @@ flowchart LR
   STT --> LLM
   LLM --> GR["Guardrails de compliance<br/>(deterministas)"]
   GR --> REP[Informe + fuentes]
-  REP --> TTS["TTS: resumen en audio<br/>OpenAI"]
-  REP --> PRM["LLM: prompt de imagen"] --> IGEN["Modelo de imagen<br/>OpenAI"] --> INFO[Infografía]
+  REP --> TTS["TTS: resumen en audio"]
+  REP --> FIG["Verificación de cifras<br/>(determinista)"]
+  REP --> PRM["LLM: prompt de ilustración<br/>(sin texto ni cifras)"] --> IGEN["Modelo de imagen"] --> COMP["Composición Python<br/>cifras verificadas"]
+  FIG --> COMP --> INFO[Infografía]
   REP --> CHAT[Chat de seguimiento]
 ```
 
 La **visión y la transcripción se ejecutan en paralelo**, y también el audio y la infografía. El informe
 aparece en pantalla en cuanto está listo; el audio y la infografía llegan después (render progresivo).
 
-| Modalidad | Modelo por defecto | Proveedor | Rol |
-|---|---|---|---|
-| Texto→texto | `claude-sonnet-5-5` | Anthropic | Análisis, síntesis y chat |
-| Imagen→texto | `claude-sonnet-5-5` | Anthropic | Lectura del gráfico |
-| Voz→texto | `whisper-1` | OpenAI | Transcripción |
-| Texto→voz | `tts-1` | OpenAI | Resumen en audio |
-| Texto→imagen | `gpt-image-1` | OpenAI | Infografía |
+Cada capacidad se asigna a un proveedor de forma independiente (`*_PROVIDER`). Con una sola clave de
+**OpenRouter** funcionan las cinco; también se pueden usar Anthropic (LLM/visión) y OpenAI (voz/imagen).
+
+| Modalidad | Modelo por defecto (OpenRouter) | Rol |
+|---|---|---|
+| Texto→texto | `anthropic/claude-sonnet-5.5` | Análisis, síntesis y chat |
+| Imagen→texto | `google/gemini-3.8-flash` | Lectura del gráfico |
+| Voz→texto | `openai/whisper-large-v3-turbo` | Transcripción |
+| Texto→voz | `hexgrad/kokoro-82m` (voz `ef_dora`) | Resumen en audio |
+| Texto→imagen | `black-forest-labs/flux.2-klein-4b` | Ilustración de fondo de la infografía (sin cifras: las compone Python) |
 | Recuperación | TF-IDF (scikit-learn) | Local, coste 0 | Selección de fragmentos del PDF |
 
 > Los nombres de modelo y las tarifas son **configurables por variable de entorno** (`.env`) y **deben
@@ -130,17 +135,23 @@ docker build -t finlens .
 docker run -p 8501:8501 --env-file .env finlens      # sin .env: docker run -p 8501:8501 finlens
 ```
 
-**Modo real:** copia `.env.example` a `.env` y rellena `ANTHROPIC_API_KEY` y `OPENAI_API_KEY`. Si falta
-cualquiera de las dos (o `DEMO_MODE=true`) la app usa el modo demo y lo indica en un aviso visible.
+**Modo real:** copia `.env.example` a `.env` y rellena `OPENROUTER_API_KEY` (cubre las cinco capacidades) o,
+alternativamente, `ANTHROPIC_API_KEY` y/o `OPENAI_API_KEY`. La elección es **por capacidad**: en `auto` se usa
+OpenRouter si hay clave, si no el proveedor nativo y si no el simulado. Las capacidades sin clave quedan en
+modo demo y la app lo indica; con `DEMO_MODE=true` todo es simulado.
 
 | Variable | Para qué |
 |---|---|
 | `DEMO_MODE` | `true` fuerza el modo demo |
-| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | Claves de los proveedores |
+| `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | Claves de los proveedores |
+| `LLM_PROVIDER`, `VISION_PROVIDER`, `STT_PROVIDER`, `TTS_PROVIDER`, `IMAGE_PROVIDER` | `auto` (por defecto), `openrouter`, `anthropic`, `openai` o `mock` |
+| `OPENROUTER_LLM_MODEL`, `OPENROUTER_VISION_MODEL`, `OPENROUTER_STT_MODEL`, `OPENROUTER_TTS_MODEL`, `OPENROUTER_TTS_VOICE`, `OPENROUTER_IMAGE_MODEL` | Modelos de OpenRouter (slugs de su catálogo) |
 | `LLM_MODEL`, `VISION_MODEL`, `STT_MODEL`, `TTS_MODEL`, `TTS_VOICE`, `IMAGE_MODEL` | Modelos (verificar en la documentación oficial) |
 | `LLM_EFFORT` | Profundidad de razonamiento del LLM (`low`…`max`; vacío = no enviarlo) |
+| `LLM_MIN_OUTPUT_TOKENS` | Mínimo de `max_tokens` solo para Anthropic nativo (el pensamiento comparte presupuesto con la respuesta) |
+| `LOG_LEVEL` | Nivel del logger `finlens` (nunca registra documentos ni claves) |
 | `LLM_REFUSAL_FALLBACK` | `true` = reintento en otro modelo si Anthropic rechaza la petición (API beta) |
-| `IMAGE_SIZE`, `IMAGE_QUALITY` | Tamaño y calidad de la infografía |
+| `IMAGE_SIZE`, `IMAGE_QUALITY` | Tamaño y calidad de la imagen (solo OpenAI nativo) |
 | `MAX_PDF_CHARS` | Límite de texto ingerido del PDF |
 | `PRICE_*` | Tarifas para estimar el coste (verificar en las páginas oficiales) |
 
@@ -148,11 +159,12 @@ cualquiera de las dos (o `DEMO_MODE=true`) la app usa el modo demo y lo indica e
 
 ```bash
 pip install -r requirements-dev.txt
-pytest                                       # ~200 tests, todos con mocks (cero coste)
+pytest                                       # todos con mocks (cero coste)
+ruff check . && mypy src                     # calidad (también en CI)
 FINLENS_LIVE_TESTS=1 pytest -m live -v -s    # opcional: humo contra las APIs reales (consume crédito)
 ```
 
-Los tests en vivo comprueban primero, **gratis**, que los modelos configurados existen; después hacen una
+Los tests en vivo comprueban primero, **gratis**, que los modelos configurados existen (catálogo público de OpenRouter o API de modelos del proveedor nativo); después hacen una
 llamada mínima por modalidad e imprimen latencia y consumo.
 
 ## 5. Viabilidad técnica y económica
@@ -262,13 +274,13 @@ precisión y *embeddings* en lugar de TF-IDF.
 ```
 finlens/
 ├── app.py                      # entrada de Streamlit (solo UI)
-├── requirements.txt · requirements-dev.txt · pytest.ini
+├── requirements.txt · requirements-dev.txt · pyproject.toml
 ├── Dockerfile · .dockerignore · run.sh · run.bat · .env.example
 ├── .streamlit/config.toml      # límite de subida, sin telemetría
 ├── src/finlens/
 │   ├── config.py               # ajustes por variables de entorno
-│   ├── providers/              # base.py (Protocols), anthropic_provider, openai_provider, mock, registry, media
-│   ├── domain/                 # schemas, prompts, ingest, rag, guardrails, cost, structured
+│   ├── providers/              # base.py (Protocols), anthropic_provider, openai_provider, openrouter_provider, mock, registry, media
+│   ├── domain/                 # schemas, prompts, ingest, rag, guardrails, grounding, infographic, cost, structured
 │   ├── orchestration/          # pipeline, trace, cache, metrics
 │   └── ui/                     # views (Streamlit), demo_samples
 ├── scripts/                    # medir.py (latencia y coste), capturas.py (capturas del README)

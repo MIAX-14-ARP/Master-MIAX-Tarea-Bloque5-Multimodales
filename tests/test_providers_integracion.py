@@ -77,7 +77,9 @@ def test_flujo_completo_con_las_clases_reales() -> None:
     assert pasos["Transcripción de audio"].cost_usd == 30 / 60 * 0.006
 
     medios = generate_media(providers, tarifas, resultado)
-    assert medios.audio.audio == b"mp3" and medios.image.image == b"\x89PNG" and not medios.warnings
+    assert medios.audio.audio == b"mp3" and medios.illustration.image == b"\x89PNG"
+    # la "ilustración" b"\x89PNG" no es una imagen válida: la infografía se compone igualmente
+    assert medios.image.image[:4] == b"\x89PNG" and len(medios.image.image) > 1000
 
     respuesta = answer_followup(providers, tarifas, resultado, [], "¿y la deuda?")
     assert respuesta.answer.grounded

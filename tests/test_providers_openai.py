@@ -1,7 +1,5 @@
 """Tests de los proveedores de OpenAI con clientes falsos (sin red ni claves)."""
 import base64
-import io
-import wave
 from types import SimpleNamespace
 
 import httpx2 as httpx

@@ -3,7 +3,7 @@ import ast
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[1] / "src" / "finlens"
-SDK = {"anthropic", "openai"}
+SDK = {"anthropic", "openai", "httpx", "httpx2"}
 
 
 def importaciones(ruta: Path) -> set[str]:

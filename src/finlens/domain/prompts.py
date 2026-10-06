@@ -1,7 +1,7 @@
 """Prompts en español y construcción de los mensajes para cada paso del LLM."""
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from finlens.domain.rag import Retrieved
 from finlens.domain.schemas import AnalysisReport, ChartReading
@@ -25,7 +25,9 @@ pregunta del usuario cruzando el informe, el gráfico de cotización y la confer
 Reglas:
 {_REGLAS_COMUNES}
 - En «correlations» relaciona lo que dice el informe, lo que muestra el gráfico y lo que declara la \
-dirección, y señala también las contradicciones entre ellos.
+dirección. Las contradicciones entre ellos van en «contradictions», no mezcladas en «correlations».
+- En «key_figures.value» copia la cifra LITERAL tal como aparece en el documento (mismo idioma, formato, \
+símbolo y unidad, p.ej. «€10.7 billion» o «58.3%»): no la conviertas ni la traduzcas; traduce solo «name».
 - Los datos que falten (por ejemplo, no se aportó gráfico o audio) van en «limitations».
 - «spoken_summary» es un guion breve (máximo 6 frases) para leer en voz alta, sin símbolos ni tablas."""
 
@@ -36,14 +38,11 @@ Reglas:
 {_REGLAS_COMUNES}
 - Si la respuesta no está en los materiales, responde que no consta con grounded=false y sin citas."""
 
-INFOGRAPHIC_SYSTEM = """\
-Redactas el prompt para un modelo de generación de imágenes que creará una infografía en español a \
-partir de un informe financiero.
+INFOGRAPHIC_SYSTEM = """Redactas el prompt para un modelo de generación de imágenes que creará la ILUSTRACIÓN DE FONDO de una infografía sobre un informe financiero. Las cifras y los textos los añadirá después el programa: la imagen NO debe contener ninguno.
 Reglas:
-- Usa únicamente cifras del informe; no inventes datos.
-- Pocos textos, breves y legibles; estilo corporativo sobrio.
+- La ilustración no lleva texto, letras, números, símbolos monetarios, porcentajes, logotipos ni marcas de agua: debe ser una imagen puramente visual (abstracta o conceptual).
+- Evoca el tema del informe (sector, tendencia general) con formas, siluetas o gráficos sin ejes ni etiquetas; estilo corporativo sobrio, tonos oscuros con acentos dorados, composición apta como cabecera.
 - No incluyas recomendaciones de compra o venta ni precios objetivo.
-- Añade un pie con la leyenda «Generado con IA · Solo informativo».
 - Redacta el prompt en español."""
 
 VISION_PROMPT = (

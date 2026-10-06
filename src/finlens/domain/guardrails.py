@@ -143,6 +143,7 @@ def apply_guardrails(report: AnalysisReport) -> GuardrailResult:
         report.management_statements, "management_statements", violations
     )
     correlations = _filtrar_findings(report.correlations, "correlations", violations)
+    contradictions = _filtrar_findings(report.contradictions, "contradictions", violations)
 
     limitations = []
     for texto in report.limitations:
@@ -161,6 +162,7 @@ def apply_guardrails(report: AnalysisReport) -> GuardrailResult:
             "chart_reading": chart[0] if chart else None,
             "management_statements": management,
             "correlations": correlations,
+            "contradictions": contradictions,
             "limitations": limitations,
         }
     )

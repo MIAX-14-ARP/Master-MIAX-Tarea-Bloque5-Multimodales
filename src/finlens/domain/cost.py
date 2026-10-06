@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from finlens.config import Settings
-from finlens.providers.base import TextResult
+from finlens.providers.base import EmbeddingResult, ImageResult, SpeechResult, TextResult, TranscriptionResult
 
 CURRENCY = "USD"
 
@@ -21,6 +21,7 @@ class Tariffs:
     stt_per_minute: float
     tts_per_mchar: float
     image_per_unit: float
+    embeddings_per_mtok: float = 0.02
 
     @classmethod
     def from_settings(cls, settings: Settings) -> Tariffs:
@@ -28,8 +29,9 @@ class Tariffs:
             settings.price_llm_input_per_mtok,
             settings.price_llm_output_per_mtok,
             settings.price_stt_per_minute,
-            settings.price_tts_per_mchar,
+            settings.effective_price_tts_per_mchar,
             settings.price_image_per_unit,
+            settings.price_embeddings_per_mtok,
         )
 
 
@@ -41,6 +43,9 @@ def llm_cost(tariffs: Tariffs, tokens_in: int, tokens_out: int) -> float:
 
 
 def text_result_cost(tariffs: Tariffs, result: TextResult) -> float:
+    """Coste real si el proveedor lo informó (`cost_usd`); si no, estimado con las tarifas."""
+    if result.cost_usd is not None:
+        return result.cost_usd
     return llm_cost(tariffs, result.tokens_in, result.tokens_out)
 
 
@@ -54,3 +59,21 @@ def tts_cost(tariffs: Tariffs, chars: int) -> float:
 
 def image_cost(tariffs: Tariffs, count: int = 1) -> float:
     return count * tariffs.image_per_unit
+
+
+def transcription_cost(tariffs: Tariffs, result: TranscriptionResult) -> float:
+    return result.cost_usd if result.cost_usd is not None else stt_cost(tariffs, result.duration_s)
+
+
+def speech_cost(tariffs: Tariffs, result: SpeechResult) -> float:
+    return result.cost_usd if result.cost_usd is not None else tts_cost(tariffs, result.chars)
+
+
+def image_result_cost(tariffs: Tariffs, result: ImageResult) -> float:
+    return result.cost_usd if result.cost_usd is not None else image_cost(tariffs)
+
+
+def embedding_cost(tariffs: Tariffs, result: EmbeddingResult) -> float:
+    if result.cost_usd is not None:
+        return result.cost_usd
+    return result.tokens / 1_000_000 * tariffs.embeddings_per_mtok

@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Callable, Generic, Sequence, TypeVar
+from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -71,8 +72,9 @@ def _run(model_cls: type[T], invoke: _Invocador) -> StructuredResult[T]:
             return StructuredResult(parse_model(model_cls, resultado.text), tuple(llamadas))
         except ValueError as exc:
             feedback = (resultado.text, str(exc))
+    motivo = feedback[1] if feedback else "sin respuesta"
     raise StructuredOutputError(
-        f"El modelo no devolvió una respuesta estructurada válida tras 2 intentos ({feedback[1]}). "
+        f"El modelo no devolvió una respuesta estructurada válida tras 2 intentos ({motivo}). "
         "Inténtalo de nuevo o simplifica la consulta."
     )
 

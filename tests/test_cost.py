@@ -33,3 +33,19 @@ def test_las_tarifas_salen_de_la_configuracion() -> None:
     tarifas = cost.Tariffs.from_settings(settings)
     assert tarifas.stt_per_minute == 0.02 and tarifas.image_per_unit == 0.1
     assert tarifas.llm_input_per_mtok == settings.price_llm_input_per_mtok
+
+
+def test_el_coste_real_del_proveedor_prevalece_sobre_las_tarifas() -> None:
+    from finlens.domain.cost import image_result_cost, speech_cost, transcription_cost
+    from finlens.providers.base import ImageResult, SpeechResult, TranscriptionResult
+
+    t = cost.Tariffs(2.0, 10.0, 0.006, 15.0, 0.04)
+    assert cost.text_result_cost(t, TextResult("x", "m", 1_000_000, 0, cost_usd=0.01)) == 0.01
+    assert cost.text_result_cost(t, TextResult("x", "m", 1_000_000, 0, cost_usd=0.0)) == 0.0
+    assert cost.text_result_cost(t, TextResult("x", "m", 1_000_000, 0)) == pytest.approx(2.0)
+    assert transcription_cost(t, TranscriptionResult("x", "m", 60.0, cost_usd=0.5)) == 0.5
+    assert transcription_cost(t, TranscriptionResult("x", "m", 60.0)) == pytest.approx(0.006)
+    assert speech_cost(t, SpeechResult(b"a", "audio/mpeg", "m", 1_000_000, cost_usd=0.2)) == 0.2
+    assert speech_cost(t, SpeechResult(b"a", "audio/mpeg", "m", 1_000_000)) == pytest.approx(15.0)
+    assert image_result_cost(t, ImageResult(b"a", "image/png", "m", cost_usd=0.07)) == 0.07
+    assert image_result_cost(t, ImageResult(b"a", "image/png", "m")) == 0.04

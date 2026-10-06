@@ -1,9 +1,9 @@
 """Agregación de trazas de varios análisis: latencia y coste medios para la sección de viabilidad."""
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from statistics import mean
-from typing import Mapping, Sequence
 
 from finlens.domain.cost import CURRENCY, Tariffs
 from finlens.orchestration.pipeline import AnalysisResult, MediaResult

@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "finlens"
+version = "0.2.0"
+description = "FinLens: análisis multimodal de informes financieros (PDF + gráfico + audio)"
+readme = "README.md"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+src = ["src", "tests"]
+extend-exclude = [".venv", "venv", "outputs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+# E501: el repo tiene prompts y textos de interfaz largos a propósito; line-length orienta al formateo.
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["finlens"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
+files = ["src"]
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+markers = [
+    "live: pruebas contra las APIs reales (de pago); solo con FINLENS_LIVE_TESTS=1 y claves en el entorno",
+]

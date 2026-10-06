@@ -1,6 +1,6 @@
 """Tests de ask_structured: validación, reintento único y degradación con mensaje claro."""
 import json
-from typing import Sequence
+from collections.abc import Sequence
 
 import pytest
 

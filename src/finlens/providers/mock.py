@@ -8,9 +8,13 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Sequence
+import unicodedata
+import zlib
+from collections.abc import Sequence
+from typing import Literal
 
 from finlens.providers.base import (
+    EmbeddingResult,
     ImageResult,
     Message,
     ProviderError,
@@ -32,7 +36,7 @@ RESPUESTAS_LLM: dict[str, dict] = {
             {"name": "Margen operativo", "value": "18,4 %", "period": "FY2025",
              "citations": [_CITA_DOC]},
             {"name": "Ingresos", "value": "12.300 M EUR", "period": "FY2025",
-             "citations": [_CITA_DOC]},
+             "citations": [{"origin": "documento", "location": "p.2"}]},
         ],
         "chart_reading": {
             "statement": "El precio sube de forma sostenida en el periodo mostrado.",
@@ -47,6 +51,7 @@ RESPUESTAS_LLM: dict[str, dict] = {
              "del gráfico y con el tono positivo de la conferencia.",
              "citations": [_CITA_DOC, _CITA_GRAFICO, _CITA_AUDIO]},
         ],
+        "contradictions": [],
         "limitations": ["Datos simulados del modo demo; no proceden de ningún informe real."],
         "spoken_summary": "Resumen simulado. El margen operativo mejoró, la dirección mantiene "
         "su guía y el gráfico muestra una tendencia alcista.",
@@ -62,8 +67,8 @@ RESPUESTAS_LLM: dict[str, dict] = {
         "citations": [_CITA_DOC],
     },
     "InfographicPrompt": {
-        "prompt": "Infografía limpia en español sobre resultados anuales: margen operativo 18,4 %, "
-        "ingresos 12.300 M EUR y flecha de tendencia alcista. Estilo corporativo sobrio."
+        "prompt": "Ilustración abstracta y sobria para la cabecera de una infografía financiera: "
+        "formas geométricas ascendentes en tonos oscuros con acentos dorados, sin texto ni números."
     },
 }
 
@@ -139,3 +144,30 @@ class MockImage:
 
     def generate(self, prompt: str) -> ImageResult:
         return ImageResult(solid_png(640, 360, (30, 58, 95)), "image/png", self.model)
+
+
+class MockEmbeddings:
+    """Embeddings simulados: hashing determinista de palabras (sin acentos) en 256 dimensiones.
+
+    Solo capta coincidencias léxicas (no es multilingüe): sirve para tests y para el modo demo.
+    """
+
+    model = "mock-embeddings"
+    DIMS = 256
+
+    def embed(
+        self, texts: Sequence[str], kind: Literal["query", "document"] = "document"
+    ) -> EmbeddingResult:
+        vectores = [self._vector(t) for t in texts]
+        return EmbeddingResult(vectores, self.model, sum(_estimar_tokens(t) for t in texts))
+
+    def _vector(self, texto: str) -> list[float]:
+        plano = "".join(
+            c for c in unicodedata.normalize("NFKD", texto.lower()) if not unicodedata.combining(c)
+        )
+        v = [0.0] * self.DIMS
+        for palabra in re.findall(r"[a-z0-9]+", plano):
+            h = zlib.crc32(palabra.encode())
+            v[h % self.DIMS] += 1.0 if (h >> 8) & 1 else -1.0
+        norma = sum(x * x for x in v) ** 0.5
+        return [x / norma for x in v] if norma else v

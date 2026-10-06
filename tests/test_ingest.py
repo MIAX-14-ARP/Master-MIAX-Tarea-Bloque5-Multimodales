@@ -2,10 +2,10 @@
 import io
 
 import pytest
-from finlens.ui.demo_samples import make_pdf
 from pypdf import PdfWriter
 
 from finlens.domain.ingest import IngestError, ingest_pdf, split_text
+from finlens.ui.demo_samples import make_pdf
 
 
 def test_extrae_texto_con_su_pagina() -> None:
@@ -64,7 +64,7 @@ def test_split_text_solapa_fragmentos_contiguos() -> None:
     palabras = [f"p{i:03d}" for i in range(100)]
     trozos = split_text(" ".join(palabras), size=100, overlap=30)
     assert len(trozos) > 2
-    for anterior, siguiente in zip(trozos, trozos[1:]):
+    for anterior, siguiente in zip(trozos, trozos[1:], strict=False):
         assert anterior.split()[-1] in siguiente.split()
     assert set(" ".join(trozos).split()) == set(palabras)
 

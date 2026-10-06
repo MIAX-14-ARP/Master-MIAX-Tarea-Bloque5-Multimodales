@@ -51,6 +51,7 @@ class AnalysisReport(BaseModel):
     chart_reading: Finding | None = None
     management_statements: list[Finding] = []
     correlations: list[Finding] = []
+    contradictions: list[Finding] = []  # discrepancias entre modalidades (informe/gráfico/audio)
     limitations: list[str] = []
     spoken_summary: str = Field(min_length=1)
 
