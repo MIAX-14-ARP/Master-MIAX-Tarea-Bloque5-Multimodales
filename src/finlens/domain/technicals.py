@@ -57,6 +57,7 @@ class TechnicalSummary:
     supports: tuple[float, ...]
     resistances: tuple[float, ...]
     periods_per_year: int
+    pivots: tuple[float, ...] = ()  # TODOS los niveles de pivote del periodo (fundidos), de menor a mayor
 
 
 def sma(valores: Floats, n: int) -> Floats:
@@ -155,11 +156,16 @@ def cluster_levels(niveles: list[float], tolerancia: float = TOLERANCIA_AGRUPAR)
     return [float(np.mean(g)) for g in grupos]
 
 
+def all_levels(altos: Floats, bajos: Floats) -> list[float]:
+    """Todos los niveles de pivote del periodo, fundidos y ordenados de menor a mayor."""
+    return cluster_levels(pivot_levels(altos, bajos))
+
+
 def support_resistance(
     altos: Floats, bajos: Floats, ultimo: float
 ) -> tuple[tuple[float, ...], tuple[float, ...]]:
     """Soportes (niveles bajo el último cierre) y resistencias (sobre él), los `MAX_NIVELES` más cercanos."""
-    niveles = cluster_levels(pivot_levels(altos, bajos))
+    niveles = all_levels(altos, bajos)
     soportes = sorted((n for n in niveles if n < ultimo), reverse=True)[:MAX_NIVELES]
     resistencias = sorted(n for n in niveles if n >= ultimo)[:MAX_NIVELES]
     return tuple(soportes), tuple(resistencias)
@@ -211,4 +217,5 @@ def compute_technicals(serie: PriceSeries, mercado: MarketKind | None = None) ->
         supports=soportes,
         resistances=resistencias,
         periods_per_year=ppy,
+        pivots=tuple(all_levels(altos, bajos)),
     )

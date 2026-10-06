@@ -10,10 +10,11 @@ import logging
 import time
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Generic, Literal, TypeVar, cast
 
 from finlens.domain import cost
+from finlens.domain.chart_check import ChartCheck, check_chart_reading
 from finlens.domain.cost import Tariffs
 from finlens.domain.grounding import FigureCheck, check_figures
 from finlens.domain.guardrails import (
@@ -26,6 +27,7 @@ from finlens.domain.guardrails import (
 )
 from finlens.domain.infographic import compose_infographic
 from finlens.domain.ingest import DEFAULT_MAX_CHARS, IngestedDocument, IngestError, ingest_pdf
+from finlens.domain.market_chart import render_market_chart
 from finlens.domain.prompts import (
     ANALYST_SYSTEM,
     CHAT_SYSTEM,
@@ -34,6 +36,8 @@ from finlens.domain.prompts import (
     build_analysis_messages,
     build_chat_messages,
     build_infographic_messages,
+    format_fundamentals,
+    format_market,
 )
 from finlens.domain.rag import HybridRetriever, Retrieved
 from finlens.domain.schemas import AnalysisReport, ChartReading, ChatAnswer, InfographicPrompt
@@ -42,6 +46,7 @@ from finlens.domain.structured import (
     ask_structured,
     ask_structured_vision,
 )
+from finlens.domain.technicals import TechnicalSummary, compute_technicals
 from finlens.orchestration.trace import TraceStep, total_cost
 from finlens.providers.base import (
     EmbeddingResult,
@@ -52,6 +57,13 @@ from finlens.providers.base import (
     SpeechResult,
     TextResult,
 )
+from finlens.sources.base import (  # noqa: E402
+    DerivativesSnapshot,
+    Fundamentals,
+    PriceSeries,
+    SourceError,
+)
+from finlens.sources.registry import MarketSources, build_sources  # noqa: E402
 
 log = logging.getLogger("finlens.pipeline")
 T = TypeVar("T")
@@ -89,6 +101,21 @@ class AnalysisInput:
     audio: bytes | None = None
     audio_name: str = "audio.wav"
     audio_role: AudioRole = "conferencia"
+    ticker: str = ""  # PDF o ticker (al menos uno); sin PDF (b"") el análisis trabaja con mercado
+    market_range: str = "6mo"
+
+
+@dataclass(frozen=True)
+class MarketContext:
+    """Datos de mercado de un análisis: serie, indicadores calculados en Python y contraste con la visión."""
+
+    series: PriceSeries
+    technicals: TechnicalSummary
+    derivatives: DerivativesSnapshot | None = None
+    fundamentals: Fundamentals | None = None
+    chart_check: ChartCheck | None = None
+    chart_png: bytes | None = None  # gráfico generado (None si el usuario subió el suyo)
+    kind: str = ""  # "accion" | "cripto"
 
 
 @dataclass(frozen=True)
@@ -98,13 +125,14 @@ class AnalysisResult:
     question: str
     guard: GuardrailResult
     document: IngestedDocument
-    retriever: HybridRetriever
+    retriever: HybridRetriever | None  # None si no hubo PDF
     chart: ChartReading | None
     transcript: str | None
     trace: tuple[TraceStep, ...]
     warnings: tuple[str, ...]
     total_seconds: float
     figure_checks: tuple[FigureCheck, ...] = ()
+    market: MarketContext | None = None
 
     @property
     def report(self) -> AnalysisReport:
@@ -192,7 +220,7 @@ class _Phase:
 
 
 def _error_message(exc: Exception) -> str:
-    controlados = (StepError, ProviderError, StructuredOutputError, IngestError)
+    controlados = (StepError, ProviderError, StructuredOutputError, IngestError, SourceError)
     return str(exc) if isinstance(exc, controlados) else f"error inesperado ({type(exc).__name__})"
 
 
@@ -262,11 +290,10 @@ def _step_ingest(pdf: bytes, max_chars: int) -> _Done[tuple[IngestedDocument, Hy
     return _Done((doc, retriever), "pypdf + TF-IDF", note=nota)
 
 
-def _step_vision(providers: Providers, tariffs: Tariffs, inp: AnalysisInput) -> _Done[ChartReading]:
-    assert inp.chart is not None
-    resultado = ask_structured_vision(
-        providers.vision, inp.chart, inp.chart_mime, VISION_PROMPT, ChartReading
-    )
+def _step_vision(
+    providers: Providers, tariffs: Tariffs, chart: bytes, mime: str
+) -> _Done[ChartReading]:
+    resultado = ask_structured_vision(providers.vision, chart, mime, VISION_PROMPT, ChartReading)
     coste = sum(cost.text_result_cost(tariffs, c) for c in resultado.calls)
     return _Done(
         resultado.value, resultado.calls[-1].model, coste, f"tendencia {resultado.value.trend}",
@@ -294,7 +321,14 @@ def _resolve_question(inp: AnalysisInput, transcript: str | None) -> str:
     escrita = inp.question.strip()
     if inp.audio_role == "pregunta" and transcript:
         return f"{escrita} {transcript}".strip()
-    return escrita or DEFAULT_QUESTION
+    if escrita:
+        return escrita
+    if not inp.pdf and inp.ticker.strip():
+        return (
+            f"Resume la situación de mercado de {inp.ticker.strip().upper()}: tendencia, niveles relevantes, "
+            "riesgos y, si hay fundamentales, su evolución."
+        )
+    return DEFAULT_QUESTION
 
 
 def _modo(retriever: HybridRetriever, hibrida: bool) -> str:
@@ -328,6 +362,8 @@ def _step_retrieve(
     real = busqueda.embedding is not None and busqueda.embedding.cost_usd is not None
     if busqueda.results:
         nota = f"{len(busqueda.results)} fragmentos relevantes · {_modo(retriever, hibrida)}"
+        if hibrida:
+            nota += f" · peso léxico {busqueda.lexical_weight:.2f}"
         return _Done(busqueda.results, modelo, coste, nota, warnings=avisos, cost_real=real)
     respaldo = [Retrieved(c, 0.0) for c in document.chunks[:RETRIEVAL_K]]
     return _Done(
@@ -343,8 +379,10 @@ def _step_analysis(
     retrieved: list[Retrieved],
     chart: ChartReading | None,
     context_transcript: str | None,
+    market: str | None = None,
+    sec: str | None = None,
 ) -> _Done[AnalysisReport]:
-    mensajes = build_analysis_messages(question, retrieved, chart, context_transcript)
+    mensajes = build_analysis_messages(question, retrieved, chart, context_transcript, market, sec)
     resultado = ask_structured(providers.llm, ANALYST_SYSTEM, mensajes, AnalysisReport, 3000)
     coste = sum(cost.text_result_cost(tariffs, c) for c in resultado.calls)
     nota = f"{len(resultado.calls)} llamada(s)" + (" · con reintento" if len(resultado.calls) > 1 else "")
@@ -355,10 +393,18 @@ def _step_analysis(
 
 
 def _step_grounding(
-    report: AnalysisReport, document: IngestedDocument
+    report: AnalysisReport,
+    document: IngestedDocument | None,
+    market: MarketContext | None = None,
+    fundamentals: Fundamentals | None = None,
 ) -> _Done[tuple[FigureCheck, ...]]:
     """Verificación determinista de cifras (aviso, nunca bloqueo)."""
-    checks = check_figures(report, document)
+    checks = check_figures(
+        report, document,
+        technicals=market.technicals if market else None,
+        derivatives=market.derivatives if market else None,
+        fundamentals=fundamentals,
+    )
     verificadas = sum(c.status == "verificada" for c in checks)
     falladas = [c for c in checks if c.status == "no_encontrada"]
     avisos: tuple[str, ...] = ()
@@ -382,6 +428,91 @@ def _step_guardrails(report: AnalysisReport) -> _Done[GuardrailResult]:
     return _Done(guard, "reglas deterministas", note=nota, warnings=avisos)
 
 
+# --- Datos de mercado (ticker) ---------------------------------------------------------------
+
+
+def _step_prices(
+    sources: MarketSources, ticker: str, rango: str
+) -> _Done[tuple[PriceSeries, DerivativesSnapshot | None, str]]:
+    kind = sources.kind(ticker)
+    serie = sources.prices(ticker, rango)
+    derivados: DerivativesSnapshot | None = None
+    avisos: tuple[str, ...] = ()
+    if kind == "cripto":
+        try:
+            derivados = sources.derivatives_for(ticker)
+        except SourceError as exc:  # los derivados son un extra: sin ellos se sigue con precios
+            avisos = (f"Derivados no disponibles: {exc}",)
+    nota = f"{len(serie.candles)} velas ({rango}) · {serie.currency}" + (" · con derivados" if derivados else "")
+    return _Done((serie, derivados, kind), serie.source, note=nota, warnings=avisos)
+
+
+def _step_technicals(serie: PriceSeries, kind: str) -> _Done[TechnicalSummary]:
+    try:
+        tech = compute_technicals(serie, "cripto" if kind == "cripto" else "accion")
+    except ValueError as exc:
+        raise StepError(str(exc)) from exc
+    nota = f"tendencia {tech.trend} · RSI {tech.rsi14:.0f}" if tech.rsi14 is not None else f"tendencia {tech.trend}"
+    return _Done(tech, "reglas deterministas", note=nota)
+
+
+def _step_market_chart(serie: PriceSeries) -> _Done[bytes]:
+    return _Done(render_market_chart(serie), "matplotlib", note=f"{len(serie.candles)} velas")
+
+
+def _step_contrast(reading: ChartReading, tech: TechnicalSummary) -> _Done[ChartCheck]:
+    check = check_chart_reading(reading, tech)
+    nota = f"concordancia {check.agreement_score:.0%} ({check.n_verifiable} afirmaciones verificables)"
+    return _Done(check, "reglas deterministas", note=nota)
+
+
+def _step_sec(sources: MarketSources, ticker: str) -> _Done[Fundamentals | None]:
+    fund = sources.fundamentals_for(ticker)
+    if fund is None:
+        return _Done(None, "SEC EDGAR", note="sin fundamentales (cripto o empresa que no reporta a la SEC)")
+    ejercicios = sorted({h.fy for h in fund.facts}, reverse=True)
+    nota = f"{fund.company} · {len(fund.facts)} cifras" + (f" · FY{ejercicios[0]}" if ejercicios else "")
+    return _Done(fund, "SEC EDGAR", note=nota)
+
+
+def _market_branch(
+    providers: Providers, tariffs: Tariffs, inp: AnalysisInput, sources: MarketSources, fase: _Phase,
+    parallel: bool,
+) -> _Outcome[dict[str, Any]]:
+    """Cadena de mercado: datos → técnicos → gráfico generado → visión → contraste. Cada fallo degrada."""
+    pasos: list[TraceStep] = []
+    avisos: list[str] = []
+
+    def correr(nombre: str, fn: Callable[[], _Done[Any]]) -> Any:
+        salida = _execute(nombre, fn, parallel, fase)
+        pasos.extend(salida.steps)
+        avisos.extend(salida.warnings)
+        return salida.value
+
+    ticker = inp.ticker.strip()
+    datos = correr("Datos de mercado", lambda: _step_prices(sources, ticker, inp.market_range))
+    serie: PriceSeries | None = datos[0] if datos else None
+    derivados: DerivativesSnapshot | None = datos[1] if datos else None
+    kind: str = datos[2] if datos else ""
+    tech = correr("Indicadores técnicos", lambda: _step_technicals(serie, kind)) if serie else None
+    grafico, mime, generado = inp.chart, inp.chart_mime, None
+    if grafico is None and serie is not None:
+        generado = correr("Gráfico generado", lambda: _step_market_chart(serie))
+        grafico, mime = generado, "image/png"
+    lectura = None
+    if grafico is not None:
+        lectura = correr("Lectura del gráfico", lambda: _step_vision(providers, tariffs, grafico, mime))
+    contraste = None
+    if lectura is not None and tech is not None:
+        contraste = correr("Contraste visión ↔ datos", lambda: _step_contrast(lectura, tech))
+    contexto = None
+    if serie is not None and tech is not None:
+        contexto = MarketContext(
+            serie, tech, derivados, None, contraste, generado, kind
+        )
+    return _Outcome({"chart": lectura, "market": contexto}, tuple(pasos), tuple(avisos))
+
+
 def analyze(
     providers: Providers,
     tariffs: Tariffs,
@@ -389,63 +520,97 @@ def analyze(
     *,
     max_pdf_chars: int = DEFAULT_MAX_CHARS,
     on_step: OnStep | None = None,
+    sources: MarketSources | None = None,
 ) -> AnalysisResult:
-    """Ejecuta el análisis completo. Solo PDF y análisis son obligatorios; el resto degrada.
+    """Ejecuta el análisis completo. Vale PDF o ticker; el resto de pasos degrada si falla.
 
     `on_step(nombre, "start"|"end", TraceStep|None)` es un callback opcional de progreso; puede
-    llamarse desde hilos del pool, así que debe ser thread-safe.
+    llamarse desde hilos del pool, así que debe ser thread-safe. `sources` son los conectores de
+    mercado; por defecto, simulados si todos los proveedores de IA lo son y reales si no.
     """
     fase = _Phase(on_step)
     trace: list[TraceStep] = []
     warnings: list[str] = []
+    ticker = inp.ticker.strip()
+    usa_pdf = bool(inp.pdf) or not ticker  # sin PDF ni ticker: ingesta falla con «El PDF está vacío»
 
-    document, retriever = _mandatory(
-        trace, "Ingesta e índice", lambda: _step_ingest(inp.pdf, max_pdf_chars), fase
-    )
-    if document.truncated:
-        warnings.append("El PDF superaba el límite de entrada: se analizó solo el principio.")
+    document = IngestedDocument((), 0)
+    retriever: HybridRetriever | None = None
+    if usa_pdf:
+        document, retriever = _mandatory(
+            trace, "Ingesta e índice", lambda: _step_ingest(inp.pdf, max_pdf_chars), fase
+        )
+        if document.truncated:
+            warnings.append("El PDF superaba el límite de entrada: se analizó solo el principio.")
+    if ticker and sources is None:
+        sources = build_sources(demo=providers.is_demo)
 
-    # Ramas independientes tras la ingesta (índice semántico, visión, STT): se lanzan a la vez.
-    # Las ramas futuras (mercado, cotización...) se añaden aquí como una entrada más.
-    ramas: list[tuple[str, Callable[[], _Done[Any]]]] = [
-        ("Índice semántico (embeddings)", lambda: _step_embed(providers, tariffs, retriever))
-    ]
-    if inp.chart is not None:
-        ramas.append(("Lectura del gráfico", lambda: _step_vision(providers, tariffs, inp)))
+    # Ramas independientes tras la ingesta: índice semántico, [mercado → visión → contraste], SEC y STT.
+    # Se lanzan a la vez; una rama nueva es una entrada más de esta lista.
+    Rama = Callable[[bool], _Outcome[Any]]
+    ramas: list[tuple[str, Rama]] = []
+
+    def simple(nombre: str, fn: Callable[[], _Done[Any]]) -> None:
+        ramas.append((nombre, lambda par: _execute(nombre, fn, par, fase)))
+
+    if retriever is not None:
+        base_retriever = retriever
+        simple("Índice semántico (embeddings)", lambda: _step_embed(providers, tariffs, base_retriever))
+    if inp.chart is not None and not ticker:
+        simple("Lectura del gráfico", lambda: _step_vision(providers, tariffs, inp.chart or b"", inp.chart_mime))
+    if ticker and sources is not None:
+        mercado_src = sources
+        ramas.append(("mercado", lambda par: _market_branch(providers, tariffs, inp, mercado_src, fase, par)))
+        simple("Fundamentales SEC", lambda: _step_sec(mercado_src, ticker))
     if inp.audio is not None:
-        ramas.append(("Transcripción de audio", lambda: _step_stt(providers, tariffs, inp)))
+        simple("Transcripción de audio", lambda: _step_stt(providers, tariffs, inp))
     en_paralelo = len(ramas) > 1
     resultados: dict[str, _Outcome[Any]] = {}
-    with ThreadPoolExecutor(max_workers=len(ramas)) as pool:
-        futuros = {
-            nombre: pool.submit(_execute, nombre, fn, en_paralelo, fase) for nombre, fn in ramas
-        }
-        for nombre, futuro in futuros.items():  # orden fijo de la traza
-            salida = futuro.result()
-            resultados[nombre] = salida
-            trace.extend(salida.steps)
-            warnings.extend(salida.warnings)
+    if ramas:
+        with ThreadPoolExecutor(max_workers=len(ramas)) as pool:
+            futuros = {nombre: pool.submit(fn, en_paralelo) for nombre, fn in ramas}
+            for nombre, futuro in futuros.items():  # orden fijo de la traza
+                salida = futuro.result()
+                resultados[nombre] = salida
+                trace.extend(salida.steps)
+                warnings.extend(salida.warnings)
 
-    chart = cast("ChartReading | None", resultados.get("Lectura del gráfico", _Outcome(None, ())).value)
-    transcript = cast("str | None", resultados.get("Transcripción de audio", _Outcome(None, ())).value)
-    indice = cast("EmbeddingResult | None", resultados["Índice semántico (embeddings)"].value)
-    if indice is not None:
+    def valor(nombre: str) -> Any:
+        return resultados[nombre].value if nombre in resultados else None
+
+    rama_mercado: dict[str, Any] = valor("mercado") or {}
+    chart = cast("ChartReading | None", rama_mercado.get("chart") or valor("Lectura del gráfico"))
+    market = cast("MarketContext | None", rama_mercado.get("market"))
+    fundamentals = cast("Fundamentals | None", valor("Fundamentales SEC"))
+    if market is not None and fundamentals is not None:
+        market = replace(market, fundamentals=fundamentals)
+    transcript = cast("str | None", valor("Transcripción de audio"))
+    indice = cast("EmbeddingResult | None", valor("Índice semántico (embeddings)"))
+    if retriever is not None and indice is not None:
         retriever = retriever.with_embeddings(indice.vectors, providers.embeddings)
 
     question = _resolve_question(inp, transcript)
     if inp.audio_role == "pregunta" and inp.audio is not None and transcript is None and not inp.question.strip():
         warnings.append("No se pudo leer la pregunta por voz: se usa la pregunta por defecto.")
-    busqueda = _execute("Recuperación", lambda: _step_retrieve(retriever, document, question, tariffs), phase=fase)
-    trace.extend(busqueda.steps)
-    if busqueda.error is not None:
-        raise PipelineError(busqueda.error, trace)
-    warnings.extend(busqueda.warnings)
-    retrieved = cast("list[Retrieved]", busqueda.value)
+    retrieved: list[Retrieved] = []
+    if retriever is not None:
+        busqueda = _execute(
+            "Recuperación", lambda: _step_retrieve(retriever, document, question, tariffs), phase=fase
+        )
+        trace.extend(busqueda.steps)
+        if busqueda.error is not None:
+            raise PipelineError(busqueda.error, trace)
+        warnings.extend(busqueda.warnings)
+        retrieved = cast("list[Retrieved]", busqueda.value)
     context_transcript = transcript if inp.audio_role == "conferencia" else None
+    texto_mercado = format_market(market.technicals, market.derivatives) if market else None
+    texto_sec = format_fundamentals(fundamentals) if fundamentals else None
     report = _mandatory(
         trace,
         "Análisis (LLM)",
-        lambda: _step_analysis(providers, tariffs, question, retrieved, chart, context_transcript),
+        lambda: _step_analysis(
+            providers, tariffs, question, retrieved, chart, context_transcript, texto_mercado, texto_sec
+        ),
         fase,
     )
 
@@ -457,7 +622,9 @@ def analyze(
     guard = cast("GuardrailResult", saneado.value)
 
     verificacion = _execute(
-        "Verificación de cifras", lambda: _step_grounding(guard.report, document), phase=fase
+        "Verificación de cifras",
+        lambda: _step_grounding(guard.report, document if usa_pdf else None, market, fundamentals),
+        phase=fase,
     )
     trace.extend(verificacion.steps)
     warnings.extend(verificacion.warnings)
@@ -465,7 +632,7 @@ def analyze(
 
     return AnalysisResult(
         question, guard, document, retriever, chart, transcript,
-        tuple(trace), tuple(warnings), fase.now(), checks,
+        tuple(trace), tuple(warnings), fase.now(), checks, market,
     )
 
 
@@ -616,8 +783,8 @@ def answer_followup(
 ) -> FollowUp:
     """Responde una pregunta de seguimiento con el informe y los fragmentos relevantes."""
     inicio = time.perf_counter()
-    busqueda = result.retriever.search_detailed(question, RETRIEVAL_K)
-    retrieved = busqueda.results
+    busqueda = result.retriever.search_detailed(question, RETRIEVAL_K) if result.retriever else None
+    retrieved = busqueda.results if busqueda else []
     mensajes = build_chat_messages(history, question, result.report, retrieved)
     try:
         respuesta = ask_structured(providers.llm, CHAT_SYSTEM, mensajes, ChatAnswer)
@@ -630,7 +797,7 @@ def answer_followup(
     if violaciones:
         answer = ChatAnswer(answer=texto, grounded=False)
     coste = sum(cost.text_result_cost(tariffs, c) for c in respuesta.calls)
-    if busqueda.embedding:  # solo se embebe la pregunta: el índice del documento se reutiliza
+    if busqueda and busqueda.embedding:  # solo se embebe la pregunta: el índice del documento se reutiliza
         coste += cost.embedding_cost(tariffs, busqueda.embedding)
     nota = "respuesta retirada por el guardrail" if violaciones else f"{len(retrieved)} fragmentos de contexto"
     tokens_in, tokens_out = _tokens(respuesta.calls)

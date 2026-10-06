@@ -72,3 +72,9 @@ def test_variables_de_entorno_sobrescriben_modelo_y_tarifa(monkeypatch: pytest.M
 def test_las_claves_no_aparecen_en_el_repr() -> None:
     assert "secreto-123" not in repr(crear(anthropic_api_key="secreto-123"))
     assert "secreto-456" not in repr(crear(openrouter_api_key="secreto-456"))
+
+
+def test_sec_user_agent_se_lee_del_entorno(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert crear().sec_user_agent == ""
+    monkeypatch.setenv("SEC_USER_AGENT", "FinLens academic project a@b.com")
+    assert crear().sec_user_agent == "FinLens academic project a@b.com"

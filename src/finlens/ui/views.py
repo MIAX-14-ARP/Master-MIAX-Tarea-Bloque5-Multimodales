@@ -73,6 +73,10 @@ def show_report(result: AnalysisResult) -> None:
         html(ui.subhead("§4", "Declaraciones de la dirección") + ui.findings_html(informe.management_statements))
     if informe.correlations:
         html(ui.subhead("§5", "Correlación entre modalidades") + ui.correlations_html(informe.correlations))
+    contradicciones = getattr(informe, "contradictions", None) or []
+    if contradicciones:
+        html(ui.subhead("§5b", "Contradicciones entre fuentes")
+             + ui.correlations_html(contradicciones, tension=True))
     if informe.limitations:
         html(ui.subhead("§6", "Limitaciones") + ui.limitations_html(informe.limitations))
     show_disclaimer()
@@ -86,7 +90,10 @@ def show_inputs_read(result: AnalysisResult) -> None:
         d = result.document
         texto = f"{len(d.chunks)} fragmentos indexados con TF-IDF" + (
             " · truncado por el límite de entrada" if d.truncated else "")
-        html(ui.read_card("A · Documento", f"{d.n_pages} págs.", texto))
+        if d.n_pages:
+            html(ui.read_card("A · Documento", f"{d.n_pages} págs.", texto))
+        else:
+            html(ui.read_card("A · Documento", "", extra='<p class="fl-empty">Sin PDF: análisis con datos de mercado.</p>'))
     with graf:
         if result.chart:
             etiqueta, tono = _TENDENCIA.get(result.chart.trend, (result.chart.trend, ""))
@@ -225,23 +232,22 @@ def show_market(market: Any) -> None:
         velas = getattr(serie, "candles", ()) or ()
         html(f'<div class="fl-kicker">{ui.esc(getattr(serie, "symbol", ""))} · {ui.esc(getattr(serie, "source", ""))}'
              f' · {ui.esc(getattr(serie, "currency", ""))} · {len(velas)} velas</div>')
-    izq, der = st.columns([5, 4], gap="large")
-    with izq:
-        html(ui.subhead("§M1", "Gráfico generado con datos reales"))
-        png = _pick(market, "chart_png", "chart")
-        if isinstance(png, bytes | bytearray):
+    png = _pick(market, "chart_png")
+    check = getattr(market, "chart_check", None)
+    bloque_contraste = ui.subhead("§M2", "La IA vio · los datos dicen") + (
+        ui.contrast_html(check) if check is not None
+        else '<p class="fl-empty">Sin contraste: no hubo lectura del gráfico.</p>')
+    if isinstance(png, bytes | bytearray):
+        izq, der = st.columns([5, 4], gap="large")
+        with izq:
+            html(ui.subhead("§M1", "Gráfico generado con datos reales"))
             st.image(bytes(png), width="stretch")
             html('<p class="fl-note-sm">Dibujado en Python sin anotar indicadores: el modelo de visión no puede copiar '
                  "las cifras y su lectura se contrasta después con los datos.</p>")
-        else:
-            html('<p class="fl-empty">Se analizó el gráfico subido por el usuario.</p>')
-    with der:
-        html(ui.subhead("§M2", "La IA vio · los datos dicen"))
-        check = getattr(market, "chart_check", None)
-        if check is not None:
-            html(ui.contrast_html(check))
-        else:
-            html('<p class="fl-empty">Sin contraste: no hubo lectura del gráfico.</p>')
+        with der:
+            html(bloque_contraste)
+    else:  # el usuario subió su propio gráfico: el contraste ocupa todo el ancho
+        html(bloque_contraste)
     tecnicos = _pick(market, "technicals", "technical_summary", "tech")
     if tecnicos is not None:
         pares = [(etq, _fmt(getattr(tecnicos, k), modo)) for k, etq, modo in _TECNICOS if hasattr(tecnicos, k)]

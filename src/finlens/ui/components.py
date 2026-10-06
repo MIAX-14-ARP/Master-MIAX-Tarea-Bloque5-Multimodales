@@ -7,7 +7,6 @@ blanco o una sangría de 4 espacios como fin del bloque HTML o como código.
 from __future__ import annotations
 
 import html
-import re
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
@@ -132,7 +131,9 @@ def stamp(check: Any | None) -> str:
     pagina = f" p.{check.page}" if getattr(check, "page", None) else ""
     status = getattr(check, "status", "")
     if status == "verificada":
-        return f'<span class="fl-stamp v">✓ verificada{esc(pagina)}</span>'
+        hallado = getattr(check, "matched", None)
+        detalle = f" · «{hallado}»" if hallado else ""
+        return f'<span class="fl-stamp v" title="Texto hallado en el documento">✓ verificada{esc(pagina + detalle)}</span>'
     if status == "no_encontrada":
         donde = f" en{pagina}" if pagina else ""
         return f'<span class="fl-stamp x">✕ no encontrada{esc(donde)}</span>'
@@ -179,11 +180,8 @@ def findings_html(findings: Sequence[Finding]) -> str:
     return f'<ol class="fl-finds">{"".join(filas)}</ol>'
 
 
-_TENSION = re.compile(r"contradic|discrep|diverg|no coincide|en cambio|sin embargo|choca|contrast", re.I)
-
-
-def correlations_html(findings: Sequence[Finding]) -> str:
-    """Correlaciones con matriz de modalidades; las que expresan tensión se marcan en rojo."""
+def correlations_html(findings: Sequence[Finding], *, tension: bool = False) -> str:
+    """Hallazgos entre modalidades con matriz de fuentes; `tension=True` para contradicciones."""
     filas = []
     for h in findings:
         origenes = {c.origin for c in h.citations}
@@ -191,8 +189,7 @@ def correlations_html(findings: Sequence[Finding]) -> str:
         celdas = "".join(
             f'<span class="{"on" if o in origenes else ""}">{_ORIGEN_CORTO[o]}</span>' for o in columnas
         )
-        tension = bool(_TENSION.search(h.statement))
-        etiqueta = "Tensión entre fuentes" if tension else f"Convergencia · {len(origenes)} modalidades"
+        etiqueta = "Contradicción entre fuentes" if tension else f"Convergencia · {len(origenes)} modalidades"
         filas.append(
             f'<div class="fl-corr{" is-tension" if tension else ""}">'
             f'<div class="fl-matrix" aria-label="Modalidades citadas: {esc(", ".join(sorted(origenes)))}">{celdas}</div>'
@@ -272,6 +269,7 @@ def contrast_html(check: Any) -> str:
 def kv_grid(pares: Sequence[tuple[str, str]]) -> str:
     """Rejilla de indicadores (clave pequeña en mono, valor tabular)."""
     celdas = "".join(
-        f'<div class="fl-kv"><div class="fl-kv__k">{esc(k)}</div><div class="fl-kv__v">{esc(v)}</div></div>' for k, v in pares
+        f'<div class="fl-kv"><div class="fl-kv__k">{esc(k)}</div>'
+        f'<div class="fl-kv__v{" is-list" if " · " in v else ""}">{esc(v)}</div></div>' for k, v in pares
     )
     return f'<div class="fl-kvs">{celdas}</div>'

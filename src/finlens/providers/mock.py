@@ -84,6 +84,38 @@ def _estimar_tokens(texto: str) -> int:
     return max(1, len(texto) // 4)
 
 
+def _informe_de_mercado(messages: Sequence[Message]) -> dict | None:
+    """Sin documento pero con bloques <mercado>/<sec>: cifras clave citadas a esas fuentes (leídas del prompt).
+
+    Así la demo con solo un ticker es coherente: las cifras salen de los datos aportados, no del PDF demo.
+    """
+    contenido = messages[0].content if messages else ""
+    if "<mercado>" not in contenido or "<documento>" + chr(10) + "(no aportado)" not in contenido:
+        return None
+    cierre = re.search(r"Último cierre: ([\d,.]+)\.", contenido)
+    rentab = re.search(r"Rentabilidad del periodo: (-?[\d.]+%)", contenido)
+    sec = re.search(r"- Ingresos: FY\d+: ([\d,]+ M USD)", contenido)
+    cita_m = [{"origin": "mercado", "location": ""}]
+    cifras = []
+    if cierre:
+        cifras.append({"name": "Último cierre", "value": cierre.group(1), "period": "", "citations": cita_m})
+    if rentab:
+        cifras.append({"name": "Rentabilidad del periodo", "value": rentab.group(1), "period": "", "citations": cita_m})
+    if sec:
+        cifras.append({"name": "Ingresos", "value": sec.group(1), "period": "último ejercicio",
+                       "citations": [{"origin": "sec", "location": ""}]})
+    base = json.loads(json.dumps(RESPUESTAS_LLM["AnalysisReport"]))
+    base["key_figures"] = cifras
+    base["summary"] = "(Simulado) Resumen de mercado a partir de los datos y fundamentales aportados."
+    base["correlations"] = [
+        {"statement": "La tendencia calculada coincide con la lectura del gráfico generado.",
+         "citations": [{"origin": "mercado", "location": ""}, {"origin": "grafico", "location": ""}]}
+    ]
+    base["management_statements"] = []
+    base["limitations"] = ["Datos simulados del modo demo; sin informe en PDF."]
+    return base
+
+
 class MockLLM:
     """LLM simulado: devuelve el JSON fijo del esquema solicitado en el system prompt."""
 
@@ -94,9 +126,12 @@ class MockLLM:
     ) -> TextResult:
         coincidencia = re.search(r"ESQUEMA:\s*(\w+)", system)
         esquema = coincidencia.group(1) if coincidencia else ""
+        respuesta = RESPUESTAS_LLM.get(esquema)
+        if esquema == "AnalysisReport" and respuesta is not None:
+            respuesta = _informe_de_mercado(messages) or respuesta
         texto = (
-            json.dumps(RESPUESTAS_LLM[esquema], ensure_ascii=False)
-            if esquema in RESPUESTAS_LLM
+            json.dumps(respuesta, ensure_ascii=False)
+            if respuesta is not None
             else "(Respuesta simulada sin esquema conocido)"
         )
         entrada = system + "".join(m.content for m in messages)

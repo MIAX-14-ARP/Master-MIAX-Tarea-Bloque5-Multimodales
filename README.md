@@ -150,6 +150,7 @@ modo demo y la app lo indica; con `DEMO_MODE=true` todo es simulado.
 | `LLM_MODEL`, `VISION_MODEL`, `STT_MODEL`, `TTS_MODEL`, `TTS_VOICE`, `IMAGE_MODEL` | Modelos (verificar en la documentación oficial) |
 | `LLM_EFFORT` | Profundidad de razonamiento del LLM (`low`…`max`; vacío = no enviarlo) |
 | `LLM_MIN_OUTPUT_TOKENS` | Mínimo de `max_tokens` solo para Anthropic nativo (el pensamiento comparte presupuesto con la respuesta) |
+| `SEC_USER_AGENT` | User-Agent con contacto que exige la SEC para los fundamentales (`FinLens academic project <email>`) |
 | `LOG_LEVEL` | Nivel del logger `finlens` (nunca registra documentos ni claves) |
 | `LLM_REFUSAL_FALLBACK` | `true` = reintento en otro modelo si Anthropic rechaza la petición (API beta) |
 | `IMAGE_SIZE`, `IMAGE_QUALITY` | Tamaño y calidad de la imagen (solo OpenAI nativo) |

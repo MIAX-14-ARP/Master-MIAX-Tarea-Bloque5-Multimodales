@@ -55,8 +55,10 @@ def test_la_pantalla_inicial_ofrece_tres_ranuras_y_ejemplos_en_modo_demo() -> No
 def test_flujo_completo_muestra_mapa_informe_traza_y_medios() -> None:
     at = analizar(arrancar())
     assert not at.exception
-    assert [t.label for t in at.tabs] == PESTANAS
+    # El demo trae ticker de ejemplo: aparece la pestaña Mercado (datos simulados, sin red).
+    assert [t.label for t in at.tabs] == [*PESTANAS[:2], "Mercado", *PESTANAS[2:]]
     contenido = textos(at)
+    assert "La IA vio" in contenido and "Indicadores técnicos" in contenido
     # Mapa del pipeline: un nodo por paso, con estado y modelo real de cada capacidad.
     assert 'class="fl-map"' in contenido and "st-simulado" in contenido
     assert "mock-vision" in contenido and "mock-stt" in contenido and "Fase II" in contenido
@@ -167,3 +169,14 @@ def test_omitir_solo_la_infografia_mantiene_el_audio() -> None:
     media = analizar(at).session_state["media"]
     assert media.audio is not None and media.image is None and media.image_skipped
     assert [s.step for s in media.trace] == ["Resumen en audio"] and not media.trace[0].parallel
+
+
+def test_solo_ticker_sin_pdf_analiza_con_datos_de_mercado() -> None:
+    at = arrancar()
+    at.toggle[0].set_value(False).run()
+    at.text_input[0].set_value("AAPL").run()
+    at = analizar(at)
+    assert not at.exception and at.session_state["error"] is None
+    assert "Mercado" in [t.label for t in at.tabs]
+    contenido = textos(at)
+    assert "Sin PDF" in contenido and "La IA vio" in contenido

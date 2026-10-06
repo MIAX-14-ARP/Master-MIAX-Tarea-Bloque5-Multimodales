@@ -124,7 +124,7 @@ def test_resistencia_cerca_de_pivote_se_confirma_con_ingles() -> None:
 
 def test_soporte_lejos_de_todo_pivote_discrepa() -> None:
     c = check_chart_reading(lectura("alcista", "x", "Soporte clave en 70"), tecnicos())
-    assert c.items[1].verdict == "discrepa" and "90.00" in c.items[1].detail
+    assert c.items[1].verdict == "discrepa" and "80.00" in c.items[1].detail  # el más cercano real
 
 
 def test_tolerancia_del_3_por_ciento_en_el_borde() -> None:
@@ -134,10 +134,13 @@ def test_tolerancia_del_3_por_ciento_en_el_borde() -> None:
     assert ok.items[1].verdict == "confirmada" and ko.items[1].verdict == "discrepa"
 
 
-def test_soporte_sin_pivotes_no_es_verificable() -> None:
-    c = check_chart_reading(lectura("alcista", "x", "Soporte en 90"), tecnicos(supports=(), resistances=()))
-    assert c.items[1].verdict == "no_verificable"
-    assert c.agreement_score == 1.0  # solo cuenta la tendencia confirmada
+def test_soporte_se_verifica_contra_todos_los_pivotes_y_los_extremos_no_solo_los_3_cercanos() -> None:
+    t = tecnicos(supports=(90.0,), resistances=(), pivots=(82.0, 90.0, 112.0))
+    assert check_chart_reading(lectura("alcista", "x", "Soporte en 82"), t).items[1].verdict == "confirmada"
+    assert check_chart_reading(lectura("alcista", "x", "Resistencia en 112"), t).items[1].verdict == "confirmada"
+    # el mínimo del periodo cuenta como nivel aunque no haya pivotes
+    sin = tecnicos(supports=(), resistances=(), pivots=())
+    assert check_chart_reading(lectura("alcista", "x", "Soporte en 80"), sin).items[1].verdict == "confirmada"
 
 
 def test_un_nivel_de_soporte_fuera_del_rango_discrepa_aunque_haya_pivotes() -> None:

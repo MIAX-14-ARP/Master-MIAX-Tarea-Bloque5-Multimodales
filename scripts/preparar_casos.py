@@ -17,7 +17,10 @@ import argparse
 import csv
 import json
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
@@ -174,6 +177,32 @@ def clave_openrouter() -> str | None:
     return dotenv_values(RAIZ / ".env").get("OPENROUTER_API_KEY")
 
 
+def recodificar_mp3(ruta: Path) -> bool:
+    """Re-codifica el MP3 con ffmpeg para tener una cabecera de duración correcta.
+
+    Los MP3 concatenados de Kokoro traen una cabecera Xing/VBR con la duración del primer trozo (7,4 s
+    de 83 s reales): los lectores y algunos STT truncan. Re-codificar a CBR 128 kbps lo corrige.
+    """
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        print(f"audio: AVISO ffmpeg no está instalado; {ruta.name} conserva la cabecera original "
+              "(puede declarar una duración errónea). Instálalo (https://ffmpeg.org) y repite con --forzar.")
+        return False
+    with tempfile.TemporaryDirectory() as tmp:
+        salida = Path(tmp) / ruta.name
+        proc = subprocess.run(
+            [ffmpeg, "-y", "-loglevel", "error", "-i", str(ruta), "-vn", "-c:a", "libmp3lame", "-b:a", "128k",
+             "-ar", "24000", "-ac", "1", str(salida)],
+            capture_output=True, text=True, check=False,
+        )
+        if proc.returncode != 0 or not salida.exists() or salida.stat().st_size == 0:
+            print(f"audio: AVISO ffmpeg falló al re-codificar {ruta.name}: {proc.stderr.strip()[:150]}")
+            return False
+        shutil.copyfile(salida, ruta)
+    print(f"audio: {ruta.relative_to(RAIZ)} re-codificado con ffmpeg (CBR 128 kbps)")
+    return True
+
+
 def sintetizar(texto: str, destino: Path, modelo: str, voces: list[str], clave: str) -> bool:
     from openai import OpenAI
     cliente = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=clave)
@@ -183,6 +212,7 @@ def sintetizar(texto: str, destino: Path, modelo: str, voces: list[str], clave: 
                     model=modelo, voice=voz, input=texto, response_format="mp3") as r:
                 r.stream_to_file(destino)
             print(f"audio: {destino.relative_to(RAIZ)} (modelo={modelo}, voz={voz}, {destino.stat().st_size / 1e3:.0f} KB)")
+            recodificar_mp3(destino)
             return True
         except Exception as exc:  # noqa: BLE001
             print(f"audio: voz {voz} fallo ({type(exc).__name__}: {str(exc)[:150]})")

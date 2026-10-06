@@ -173,22 +173,10 @@ def match_steps(steps: Sequence[TraceStep]) -> dict[str, TraceStep]:
     return casados
 
 
-def _live_status(key: str, live: Mapping[str, str]) -> Status:
-    """Estado deducido de las llamadas en curso de la fase (capacidad → en_curso/ok/fallo)."""
-    spec = NODES[key]
-    if spec.capability:
-        return live.get(spec.capability, "pendiente")  # type: ignore[return-value]
-    if key == "ingest":
-        return "ok" if live else "en_curso"
-    if key == "retrieve":
-        if "llm" in live:
-            return "ok"
-        return "en_curso" if live and all(v != "en_curso" for v in live.values()) else "pendiente"
-    if key in ("verify", "guard"):
-        return "en_curso" if live.get("llm") == "ok" else "pendiente"
-    if key == "compose":
-        return "en_curso" if live.get("image") == "ok" else "pendiente"
-    return "pendiente"
+def match_name(nombre: str) -> str | None:
+    """Nodo al que corresponde un nombre de paso (o None)."""
+    plegado = _fold(nombre)
+    return next((c for c in _MATCH_ORDER if any(k in plegado for k in NODES[c].keywords)), None)
 
 
 def build_nodes(
@@ -197,13 +185,25 @@ def build_nodes(
     *,
     steps1: Sequence[TraceStep] | None = None,
     steps2: Sequence[TraceStep] | None = None,
-    live: Mapping[str, str] | None = None,
+    live: Sequence[str] | None = None,
+    live_steps: Sequence[TraceStep] = (),
     live_phase: int | None = None,
     skipped: frozenset[str] = frozenset(),
 ) -> dict[str, NodeView]:
-    """Vista de cada nodo. `stepsN=None` significa que la fase N no ha terminado."""
+    """Vista de cada nodo. `stepsN=None` significa que la fase N no ha terminado.
+
+    En vivo (`live_phase`): `live` son los nombres de los pasos en curso y `live_steps` los ya
+    terminados de esa fase (del callback `on_step` del pipeline).
+    """
     casados1 = match_steps(steps1) if steps1 is not None else {}
     casados2 = match_steps(steps2) if steps2 is not None else {}
+    if live is not None and live_phase in (1, 2):
+        casados_vivo = match_steps(live_steps)
+        if live_phase == 1:
+            casados1 = casados_vivo
+        else:
+            casados2 = casados_vivo
+    en_curso = {match_name(n) for n in (live or ())}
     vistas: dict[str, NodeView] = {}
     for key, spec in NODES.items():
         cap = spec.capability or (spec.alt_capability if spec.alt_capability in info else None)
@@ -225,7 +225,7 @@ def build_nodes(
             imagen = casados2.get("image")
             status = "ok" if key == "compose" and imagen is not None and imagen.ok else "omitido"
         elif live is not None and live_phase == spec.phase:
-            status = _live_status(key, live)
+            status = "en_curso" if key in en_curso else "pendiente"
         else:
             status = "pendiente"
         if status == "ok" and cap in mocks:

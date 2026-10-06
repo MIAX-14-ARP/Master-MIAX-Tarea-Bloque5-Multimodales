@@ -27,6 +27,7 @@ def cache_key(
     partes = [
         inp.pdf, inp.chart or b"", inp.audio or b"",
         inp.question.strip().encode(), inp.audio_role.encode(),
+        inp.ticker.strip().upper().encode(), inp.market_range.encode(),
         str(demo).encode(), str(max_pdf_chars).encode(),
         "|".join(f"{i.capability}:{i.backend}:{i.model}" for i in providers_info).encode(),
     ]

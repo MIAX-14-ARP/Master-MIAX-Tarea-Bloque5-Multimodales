@@ -382,6 +382,8 @@ a {{ color: var(--brass); }}
 .fl-kv {{ padding:var(--s2) var(--s3) var(--s2) 0; border-bottom:1px solid var(--rule); }}
 .fl-kv__k {{ font:600 10px/1.3 var(--f-mono); letter-spacing:.12em; text-transform:uppercase; color:var(--muted); }}
 .fl-kv__v {{ font:500 20px/1.3 var(--f-mono); color:var(--paper); font-variant-numeric:tabular-nums; margin-top:4px; overflow-wrap:anywhere; }}
+.fl-kv__v.is-list {{ font-size:14px; }}
+.fl-kv:has(.is-list) {{ grid-column:span 2; }}
 .fl-contrast-mini {{ display:flex; gap:var(--s2); align-items:center; flex-wrap:wrap; margin-top:var(--s2);
   font:12px/1.4 var(--f-mono); color:var(--paper-dim); }}
 /* §0 Cerebro: marco editorial del lienzo */

@@ -29,6 +29,7 @@ from finlens.orchestration.pipeline import (  # noqa: E402
 from finlens.orchestration.trace import TraceStep, total_cost  # noqa: E402
 from finlens.providers.base import Message, ProviderError, Providers  # noqa: E402
 from finlens.providers.registry import build_mock_providers, build_providers  # noqa: E402
+from finlens.sources.registry import build_sources  # noqa: E402
 from finlens.ui import brain, pipeline_map, theme, views  # noqa: E402
 from finlens.ui import components as ui  # noqa: E402
 from finlens.ui.demo_samples import (  # noqa: E402
@@ -197,11 +198,11 @@ def read_inputs(providers: Providers) -> Formulario:
 # --- §2 Cadena de modelos -------------------------------------------------------------------
 
 
-def render_map(lugar, providers: Providers, *, steps1=None, steps2=None, live=None, live_phase=None,
-               headline: str = "", en_vivo: bool = False) -> None:
+def render_map(lugar, providers: Providers, *, steps1=None, steps2=None, live=None, live_steps=(),
+               live_phase=None, headline: str = "", en_vivo: bool = False) -> None:
     vistas = pipeline_map.build_nodes(
         pipeline_map.provider_info(providers), pipeline_map.mock_capabilities(providers),
-        steps1=steps1, steps2=steps2, live=live, live_phase=live_phase,
+        steps1=steps1, steps2=steps2, live=live, live_steps=live_steps, live_phase=live_phase,
         skipped=st.session_state.get("omitidos", frozenset()),
     )
     lugar.markdown(
@@ -220,7 +221,8 @@ def run_analysis(entrada: AnalysisInput, providers: Providers, tariffs: Tariffs,
                  medios: tuple[bool, bool], mapa) -> None:
     """Ejecuta (o recupera de caché) el análisis con el mapa en vivo y guarda el resultado."""
     cache: AnalysisCache = st.session_state.setdefault("cache", AnalysisCache())
-    clave = cache_key(entrada, demo=providers.is_demo, max_pdf_chars=settings.max_pdf_chars)
+    clave = cache_key(entrada, demo=providers.is_demo, max_pdf_chars=settings.max_pdf_chars,
+                      providers_info=providers.info)
     st.session_state.update(error=None, chat=[], chat_trace=[], clave=clave, desde_cache=False, pedidos=medios)
 
     resultado = cache.get_analysis(clave)
@@ -228,13 +230,16 @@ def run_analysis(entrada: AnalysisInput, providers: Providers, tariffs: Tariffs,
         st.session_state.update(result=resultado, media=cache.get_media(clave, *medios), desde_cache=True)
         return
 
-    def tick(live: dict[str, str], segundos: float) -> None:
-        render_map(mapa, providers, live=live, live_phase=1, en_vivo=True,
+    def tick(en_curso: tuple[str, ...], hechos: tuple[TraceStep, ...], segundos: float) -> None:
+        render_map(mapa, providers, live=en_curso, live_steps=hechos, live_phase=1, en_vivo=True,
                    headline=f"Fase I · análisis en curso · {segundos:.1f} s")
 
+    fuentes = build_sources(demo=providers.is_demo, sec_user_agent=settings.sec_user_agent)
     try:
         resultado = run_live(
-            lambda p: analyze(p, tariffs, entrada, max_pdf_chars=settings.max_pdf_chars), providers, tick
+            lambda on_step: analyze(providers, tariffs, entrada, max_pdf_chars=settings.max_pdf_chars,
+                                    on_step=on_step, sources=fuentes),
+            tick,
         )
     except PipelineError as exc:
         log.info("Análisis interrumpido: %s", exc.message)
@@ -303,7 +308,7 @@ def show_results(providers: Providers, tariffs: Tariffs, mapa) -> None:
     if st.session_state.desde_cache:
         titular = "Recuperado de la caché: 0 llamadas nuevas a modelos · " + titular
     render_map(mapa, providers, steps1=result.trace, steps2=media.trace if media else None, headline=titular,
-               live=None if media else {}, live_phase=None if media else 2, en_vivo=media is None)
+               live=None if media else (), live_phase=None if media else 2, en_vivo=media is None)
 
     views.html(ui.section("3", "Nota de análisis", "fuentes citadas en cada afirmación"))
     views.show_warnings(result.warnings)
@@ -329,13 +334,14 @@ def show_results(providers: Providers, tariffs: Tariffs, mapa) -> None:
     if media is None:  # render progresivo: el informe ya está en pantalla
         con_audio, con_imagen = st.session_state.pedidos
 
-        def tick(live: dict[str, str], t: float) -> None:
-            render_map(mapa, providers, steps1=result.trace, live=live, live_phase=2, en_vivo=True,
-                       headline=f"Fase II · audio e infografía en curso · {t:.1f} s")
+        def tick(en_curso: tuple[str, ...], hechos: tuple[TraceStep, ...], t: float) -> None:
+            render_map(mapa, providers, steps1=result.trace, live=en_curso, live_steps=hechos, live_phase=2,
+                       en_vivo=True, headline=f"Fase II · audio e infografía en curso · {t:.1f} s")
 
         media = run_live(
-            lambda p: generate_media(p, tariffs, result, with_audio=con_audio, with_image=con_imagen),
-            providers, tick,
+            lambda on_step: generate_media(providers, tariffs, result, with_audio=con_audio,
+                                           with_image=con_imagen, on_step=on_step),
+            tick,
         )
         cache: AnalysisCache = st.session_state.cache
         cache.put_media(st.session_state.clave, media, *st.session_state.pedidos)

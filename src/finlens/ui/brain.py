@@ -107,6 +107,11 @@ def build_brain(
         nodos[id_] = n
         return n
 
+    aportes = set(aportes)
+    mercado = getattr(result, "market", None) if replay else None
+    sec_ok = any(p.ok and pm.match_name(p.step) == "sec" for p in pasos)
+    if replay and getattr(mercado, "fundamentals", None) is None and not sec_ok:
+        aportes.discard("sec")  # cripto o empresa sin CIK: no hubo datos SEC
     entradas = []
     for id_, clave, label in INPUTS:
         if not incluido(id_):

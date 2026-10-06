@@ -93,11 +93,11 @@ def test_estados_del_mapa_final_fallo_simulado_y_omitido() -> None:
 
 
 def test_estados_en_vivo_durante_la_fase_1() -> None:
-    vistas = pm.build_nodes(INFO, (), live={"vision": "en_curso", "stt": "ok"}, live_phase=1)
-    assert vistas["ingest"].status == "ok"
-    assert vistas["vision"].status == "en_curso" and vistas["stt"].status == "ok"
+    hechos = [TraceStep("Transcripción de audio", "modelo-stt", 1.2)]
+    vistas = pm.build_nodes(INFO, (), live=["Lectura del gráfico"], live_steps=hechos, live_phase=1)
+    assert vistas["vision"].status == "en_curso"
+    assert vistas["stt"].status == "ok" and vistas["stt"].seconds == 1.2
     assert vistas["analysis"].status == "pendiente" and vistas["tts"].status == "pendiente"
-    assert pm.build_nodes(INFO, (), live={}, live_phase=1)["ingest"].status == "en_curso"
 
 
 def test_linea_de_tiempo_reconstruye_el_paralelismo() -> None:
@@ -118,19 +118,27 @@ def test_linea_de_tiempo_reconstruye_el_paralelismo() -> None:
     assert gantt_chart(pasos).to_dict()["layer"]  # el gráfico se construye
 
 
-def test_tracker_y_ejecucion_en_vivo() -> None:
+def test_tracker_y_ejecucion_en_vivo_con_on_step() -> None:
     tracker = Tracker()
-    tracker.start("llm")
-    assert tracker.snapshot() == {"llm": "en_curso"}
-    tracker.finish("llm", ok=True)
-    tracker.start("image")
-    tracker.finish("image", ok=False)
-    assert tracker.snapshot() == {"llm": "ok", "image": "fallo"}
+    tracker("Análisis (LLM)", "start", None)
+    assert tracker.snapshot() == (("Análisis (LLM)",), ())
+    paso = TraceStep("Análisis (LLM)", "m", 0.1)
+    tracker("Análisis (LLM)", "end", paso)
+    assert tracker.snapshot() == ((), (paso,))
 
-    ticks: list[dict[str, str]] = []
+    ticks: list[tuple] = []
 
-    def fase(p):  # usa los proveedores espiados como lo haría el pipeline
-        return p.stt.transcribe(b"audio", "a.wav").text
+    def fase(on_step):  # así llama el pipeline al callback
+        on_step("Ingesta e índice", "start", None)
+        on_step("Ingesta e índice", "end", TraceStep("Ingesta e índice", "pypdf", 0.01))
+        return "hecho"
 
-    texto = run_live(fase, build_mock_providers(), lambda live, t: ticks.append(live))
-    assert texto  # el resultado atraviesa el espía intacto
+    assert run_live(fase, lambda en_curso, hechos, t: ticks.append((en_curso, hechos))) == "hecho"
+
+
+def test_sello_con_texto_hallado_y_contradicciones() -> None:
+    check = SimpleNamespace(status="verificada", page=5, matched="39,864")
+    assert "verificada p.5 · «39,864»" in ui.stamp(check)
+    cita = [Citation(origin="audio", location="")]
+    html = ui.correlations_html([Finding(statement="El audio contradice", citations=cita)], tension=True)
+    assert "Contradicción entre fuentes" in html and "is-tension" in html
