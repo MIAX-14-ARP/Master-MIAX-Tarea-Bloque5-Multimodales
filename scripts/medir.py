@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from finlens.config import get_settings  # noqa: E402
 from finlens.domain.cost import Tariffs  # noqa: E402
+from finlens.logging_config import configure_logging  # noqa: E402
 from finlens.orchestration.metrics import RunRecord, summarize, to_markdown  # noqa: E402
 from finlens.orchestration.pipeline import (  # noqa: E402
     AnalysisInput,
@@ -30,7 +31,7 @@ from finlens.orchestration.pipeline import (  # noqa: E402
     generate_media,
 )
 from finlens.providers.base import Providers  # noqa: E402
-from finlens.providers.registry import build_mock_providers, build_real_providers  # noqa: E402
+from finlens.providers.registry import build_mock_providers, build_providers  # noqa: E402
 
 AUDIO_EXT = (".wav", ".mp3", ".m4a", ".ogg", ".webm")
 IMAGEN_EXT = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
@@ -100,6 +101,9 @@ def probar_robustez(providers: Providers, tariffs: Tariffs, carpeta: Path) -> No
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):  # Windows: la consola cp1252 no admite ✓/✗
+        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+        sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--casos", type=Path, default=Path("samples"), help="carpeta con los casos")
     ap.add_argument("-n", "--repeticiones", type=int, default=1, help="repeticiones por caso")
@@ -110,10 +114,21 @@ def main() -> int:
     args = ap.parse_args()
 
     settings = get_settings()
-    demo = args.demo or settings.is_demo
+    configure_logging(settings.log_level)
+    providers = build_mock_providers() if args.demo else build_providers(settings)
+    demo = providers.is_demo
     if demo and not args.demo:
-        print(f"Modo demo automático: {settings.demo_reason}")
-    providers = build_mock_providers() if demo else build_real_providers(settings)
+        print(f"Modo demo automático: {settings.demo_reason or 'todas las capacidades están simuladas.'}")
+    elif providers.mock_capabilities:
+        print(
+            "AVISO: capacidades SIMULADAS (sus cifras de coste y latencia no son reales): "
+            + ", ".join(providers.mock_capabilities)
+        )
+    for aviso in providers.warnings:
+        print(f"Aviso: {aviso}")
+    if not demo:
+        resumen = ", ".join(f"{i.capability}={i.backend}:{i.model}" for i in providers.info)
+        print(f"Proveedores: {resumen}")
     tariffs = Tariffs.from_settings(settings)
 
     if args.robustez:
@@ -131,8 +146,8 @@ def main() -> int:
         print("Ninguna ejecución terminó correctamente.")
         return 1
 
-    modelos = {"llm": settings.llm_model, "vision": settings.vision_model, "stt": settings.stt_model,
-               "tts": settings.tts_model, "imagen": settings.image_model}
+    etiquetas = {"image": "imagen"}
+    modelos = {etiquetas.get(i.capability, i.capability): f"{i.model} ({i.backend})" for i in providers.info}
     informe = to_markdown(summarize(registros), demo=demo, models=modelos, tariffs=tariffs,
                           date=date.today().isoformat())
     print("\n" + informe)

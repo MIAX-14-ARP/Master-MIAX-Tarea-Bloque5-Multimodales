@@ -1,8 +1,8 @@
 """Traza de ejecución: un registro por paso con modelo, tiempo, coste estimado y nota."""
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,8 @@ class TraceStep:
     tokens_out: int = 0
     quantity: float = 0.0  # unidades facturables no textuales: segundos de audio, caracteres...
     unit: str = ""
+    started_s: float | None = None  # segundos desde el inicio de la fase en que empezó el paso
+    cost_real: bool = False  # True si el coste lo informó el proveedor; False si es tarifa estimada
 
 
 def total_cost(steps: Iterable[TraceStep]) -> float:

@@ -8,14 +8,15 @@ Notas de uso de la API (verificar en la documentación oficial; cambian con los 
 from __future__ import annotations
 
 import base64
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import anthropic
 
 from finlens.providers.base import Message, ProviderError, TextResult
 from finlens.providers.media import detect_image_mime
 
-MIN_OUTPUT_TOKENS = 8000
+DEFAULT_MIN_OUTPUT_TOKENS = 4000
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 TIMEOUT_S = 120.0
 
@@ -53,17 +54,19 @@ class _AnthropicBase:
         *,
         effort: str = "medium",
         refusal_fallback: bool = False,
+        min_output_tokens: int = DEFAULT_MIN_OUTPUT_TOKENS,
         client: Any = None,
     ) -> None:
         self.model = model
         self._effort = effort.strip()
         self._refusal_fallback = refusal_fallback
+        self._min_output_tokens = min_output_tokens
         self._client = client or anthropic.Anthropic(api_key=api_key, timeout=TIMEOUT_S)
 
     def _send(self, system: str, messages: list[dict[str, Any]], max_tokens: int) -> TextResult:
         kwargs: dict[str, Any] = {
             "model": self.model,
-            "max_tokens": max(max_tokens, MIN_OUTPUT_TOKENS),
+            "max_tokens": max(max_tokens, self._min_output_tokens),
             "messages": messages,
         }
         if system:

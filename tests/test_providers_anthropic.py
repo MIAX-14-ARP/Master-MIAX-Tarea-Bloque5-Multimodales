@@ -7,8 +7,8 @@ import httpx2 as httpx
 import pytest
 
 from finlens.providers.anthropic_provider import (
+    DEFAULT_MIN_OUTPUT_TOKENS,
     FALLBACK_BETA,
-    MIN_OUTPUT_TOKENS,
     AnthropicLLM,
     AnthropicVision,
 )
@@ -80,7 +80,14 @@ def test_reserva_margen_de_tokens_para_el_pensamiento() -> None:
     cliente = ClienteFalso()
     llm(cliente).complete("s", [Message("user", "x")], max_tokens=2048)
     llm(cliente).complete("s", [Message("user", "x")], max_tokens=20000)
-    assert [c["max_tokens"] for c in cliente.llamadas] == [MIN_OUTPUT_TOKENS, 20000]
+    assert [c["max_tokens"] for c in cliente.llamadas] == [DEFAULT_MIN_OUTPUT_TOKENS, 20000]
+    assert DEFAULT_MIN_OUTPUT_TOKENS == 4000
+
+
+def test_el_minimo_de_tokens_es_configurable() -> None:
+    cliente = ClienteFalso()
+    llm(cliente, min_output_tokens=1000).complete("s", [Message("user", "x")], max_tokens=500)
+    assert cliente.llamadas[0]["max_tokens"] == 1000
 
 
 def test_esfuerzo_vacio_no_se_envia() -> None:

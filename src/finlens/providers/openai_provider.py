@@ -8,11 +8,13 @@ from __future__ import annotations
 import base64
 import io
 import wave
-from typing import Any
+from collections.abc import Callable, Sequence
+from typing import Any, Literal
 
 import openai
 
 from finlens.providers.base import (
+    EmbeddingResult,
     ImageResult,
     ProviderError,
     SpeechResult,
@@ -20,6 +22,7 @@ from finlens.providers.base import (
 )
 
 TIMEOUT_S = 120.0
+EMBED_BATCH = 64  # textos por petición de embeddings
 MAX_AUDIO_BYTES = 25 * 1024 * 1024  # límite de subida de la API de transcripción
 BYTES_POR_SEGUNDO_ESTIMADO = 16_000  # ~128 kbps, solo para formatos comprimidos sin duración
 
@@ -56,6 +59,39 @@ def estimate_duration_s(audio: bytes, filename: str) -> float:
         except (wave.Error, EOFError):
             pass
     return len(audio) / BYTES_POR_SEGUNDO_ESTIMADO
+
+
+def _campo(objeto: Any, nombre: str) -> Any:
+    """Lee un campo de un objeto del SDK o de un dict."""
+    if isinstance(objeto, dict):
+        return objeto.get(nombre)
+    return getattr(objeto, nombre, None)
+
+
+def embed_in_batches(
+    client: Any, model: str, texts: Sequence[str], translate: Callable[[openai.OpenAIError], ProviderError]
+) -> EmbeddingResult:
+    """`embeddings.create` en lotes de EMBED_BATCH; suma tokens y coste real (`usage.cost`) si viene."""
+    if not texts:
+        return EmbeddingResult([], model)
+    vectores: list[list[float]] = []
+    tokens, coste, hay_coste = 0, 0.0, False
+    for i in range(0, len(texts), EMBED_BATCH):
+        lote = list(texts[i : i + EMBED_BATCH])
+        try:
+            respuesta = client.embeddings.create(model=model, input=lote)
+        except openai.OpenAIError as exc:
+            raise translate(exc) from exc
+        datos = sorted(respuesta.data, key=lambda d: _campo(d, "index") or 0)
+        if len(datos) != len(lote):
+            raise ProviderError("El proveedor de embeddings devolvió un número de vectores distinto al pedido.")
+        vectores += [[float(x) for x in _campo(d, "embedding")] for d in datos]
+        uso = _campo(respuesta, "usage")
+        tokens += int(_campo(uso, "prompt_tokens") or _campo(uso, "total_tokens") or 0)
+        valor = _campo(uso, "cost")
+        if isinstance(valor, (int, float)):
+            coste, hay_coste = coste + float(valor), True
+    return EmbeddingResult(vectores, model, tokens, coste if hay_coste else None)
 
 
 def _cliente(api_key: str, client: Any) -> Any:
@@ -129,3 +165,16 @@ class OpenAIImage:
         if not datos:
             raise ProviderError("OpenAI no devolvió ninguna imagen.")
         return ImageResult(base64.b64decode(datos), "image/png", self.model)
+
+
+class OpenAIEmbeddings:
+    """Embeddings de OpenAI (p.ej. `text-embedding-3-small`)."""
+
+    def __init__(self, api_key: str, model: str, client: Any = None) -> None:
+        self.model = model
+        self._client = _cliente(api_key, client)
+
+    def embed(
+        self, texts: Sequence[str], kind: Literal["query", "document"] = "document"
+    ) -> EmbeddingResult:
+        return embed_in_batches(self._client, self.model, texts, lambda e: translate_error(e, self.model))

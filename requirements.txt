@@ -1,7 +1,14 @@
-streamlit>=1.40
-pydantic>=2.7
-pydantic-settings>=2.3
-scikit-learn>=1.4
-anthropic>=0.40
-openai>=1.50
-pypdf>=4.0
+# Versiones fijadas y verificadas con `pip download --python-version 3.11/3.12 --only-binary=:all:`.
+streamlit==1.65.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+scikit-learn==1.9.1
+anthropic==1.11.0
+openai==3.24.0
+pypdf==6.19.0
+matplotlib==3.11.2
+pillow==12.3.0
+httpx2==2.13.1
+numpy==2.5.3; python_version >= "3.12"
+numpy==2.4.6; python_version < "3.12"  # numpy 2.5 exige Python 3.12+
+mutagen==1.47.0

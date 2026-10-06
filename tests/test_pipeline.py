@@ -16,7 +16,7 @@ from finlens.orchestration.pipeline import (
     generate_media,
 )
 from finlens.orchestration.trace import total_cost
-from finlens.providers.base import Message, ProviderError, Providers, TextResult
+from finlens.providers.base import Message, ProviderError, TextResult
 from finlens.providers.mock import (
     RESPUESTAS_LLM,
     TRANSCRIPCION_DEMO,
@@ -53,8 +53,8 @@ def test_flujo_completo_en_modo_demo() -> None:
     assert resultado.chart is not None and resultado.transcript == TRANSCRIPCION_DEMO
     assert resultado.document.n_pages == 4
     assert list(pasos(resultado.trace)) == [
-        "Ingesta e índice", "Lectura del gráfico", "Transcripción de audio",
-        "Recuperación", "Análisis (LLM)", "Guardrails de compliance",
+        "Ingesta e índice", "Índice semántico (embeddings)", "Lectura del gráfico", "Transcripción de audio",
+        "Recuperación", "Análisis (LLM)", "Guardrails de compliance", "Verificación de cifras",
     ]
     assert all(s.ok for s in resultado.trace)
 
@@ -235,10 +235,36 @@ def test_medios_en_modo_demo() -> None:
     medios = generate_media(providers, TARIFAS, resultado)
     assert medios.audio is not None and medios.image is not None and medios.image_prompt
     assert [s.step for s in medios.trace] == [
-        "Resumen en audio", "Prompt de infografía", "Generación de infografía",
+        "Resumen en audio", "Prompt de infografía", "Generación de infografía", "Composición de infografía",
     ]
     assert all(s.parallel for s in medios.trace) and not medios.warnings
     assert medios.cost_usd > 0
+    assert medios.illustration is not None and medios.illustration.model == "mock-image"
+    assert medios.image.model == "mock-image + composición Python"
+    assert medios.image.image != medios.illustration.image and medios.image.image[:4] == b"\x89PNG"
+
+
+def test_el_analisis_verifica_las_cifras_contra_el_documento() -> None:
+    resultado = analyze(build_mock_providers(), TARIFAS, entrada())
+    assert [c.status for c in resultado.figure_checks] == ["verificada", "verificada"]
+    paso = pasos(resultado.trace)["Verificación de cifras"]
+    assert paso.model == "reglas deterministas" and paso.note == "2/2 cifras verificadas"
+    assert not any("no encontradas" in w for w in resultado.warnings)
+
+
+def test_una_cifra_inventada_genera_aviso() -> None:
+    class LLMInventa(MockLLM):
+        def complete(self, system, messages, max_tokens=2048):  # type: ignore[no-untyped-def]
+            res = super().complete(system, messages, max_tokens)
+            if "ESQUEMA: AnalysisReport" in system:
+                return TextResult(res.text.replace("18,4 %", "99,9 %"), res.model)
+            return res
+
+    providers = replace(build_mock_providers(), llm=LLMInventa())
+    resultado = analyze(providers, TARIFAS, entrada())
+    assert [c.status for c in resultado.figure_checks] == ["no_encontrada", "verificada"]
+    assert any("Margen operativo" in w and "99,9 %" in w for w in resultado.warnings)
+    assert pasos(resultado.trace)["Verificación de cifras"].note == "1/2 cifras verificadas"
 
 
 def test_si_falla_el_tts_se_entrega_la_infografia_con_aviso() -> None:
@@ -251,15 +277,19 @@ def test_si_falla_el_tts_se_entrega_la_infografia_con_aviso() -> None:
 def test_si_falla_la_imagen_se_entrega_el_audio_con_aviso() -> None:
     providers = replace(build_mock_providers(), image=Roto())
     medios = generate_media(providers, TARIFAS, analyze(providers, TARIFAS, entrada()))
-    assert medios.audio is not None and medios.image is None
+    # la ilustración falla pero la infografía se compone igualmente con las cifras reales
+    assert medios.audio is not None and medios.image is not None and medios.illustration is None
+    assert medios.image.model == "composición Python"
     assert any("imagen caída" in w for w in medios.warnings)
+    assert any("sin ilustración" in w for w in medios.warnings)
 
 
 def test_si_fallan_los_dos_medios_el_informe_sigue_disponible() -> None:
     providers = replace(build_mock_providers(), tts=Roto(), image=Roto())
     analisis = analyze(providers, TARIFAS, entrada())
     medios = generate_media(providers, TARIFAS, analisis)
-    assert medios.audio is None and medios.image is None and len(medios.warnings) == 2
+    assert medios.audio is None and medios.image is not None and medios.illustration is None
+    assert len(medios.warnings) == 3  # TTS, ilustración y aviso de degradación
     assert analisis.report.summary
 
 
@@ -292,7 +322,8 @@ def test_imagen_omitida_si_su_prompt_incumplia_la_norma() -> None:
 
     providers = replace(build_mock_providers(), llm=PromptMalo())
     medios = generate_media(providers, TARIFAS, analyze(providers, TARIFAS, entrada()))
-    assert medios.image is None and medios.audio is not None
+    assert medios.image is not None and medios.illustration is None and medios.image_prompt is None
+    assert medios.audio is not None
     assert [s.step for s in medios.trace if not s.ok] == ["Prompt de infografía"]
 
 
@@ -371,3 +402,27 @@ def test_omitir_medios_evita_sus_llamadas_y_su_coste() -> None:
     solo_audio = generate_media(providers, TARIFAS, analisis, with_image=False)
     assert llamadas == ["tts"] and solo_audio.image is None and solo_audio.image_skipped
     assert solo_audio.audio is not None and not solo_audio.trace[0].parallel
+
+
+def test_si_falla_la_composicion_no_hay_infografia(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from finlens.orchestration import pipeline
+
+    def rota(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise RuntimeError("matplotlib roto")
+
+    monkeypatch.setattr(pipeline, "compose_infographic", rota)
+    providers = build_mock_providers()
+    medios = generate_media(providers, TARIFAS, analyze(providers, TARIFAS, entrada()))
+    assert medios.image is None and medios.audio is not None
+    assert [s.step for s in medios.trace if not s.ok] == ["Composición de infografía"]
+
+
+def test_el_coste_real_del_proveedor_sustituye_a_la_tarifa() -> None:
+    class LLMConCoste(MockLLM):
+        def complete(self, system, messages, max_tokens=2048):  # type: ignore[no-untyped-def]
+            res = super().complete(system, messages, max_tokens)
+            return replace(res, cost_usd=0.5)
+
+    providers = replace(build_mock_providers(), llm=LLMConCoste())
+    resultado = analyze(providers, TARIFAS, entrada())
+    assert pasos(resultado.trace)["Análisis (LLM)"].cost_usd == 0.5

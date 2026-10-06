@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from finlens.domain.cost import Tariffs
-from finlens.orchestration.metrics import RunRecord, summarize
-from finlens.orchestration.pipeline import PipelineError, analyze, generate_media
+from finlens.orchestration.metrics import summarize
+from finlens.orchestration.pipeline import PipelineError, analyze
 from finlens.providers.registry import build_mock_providers
 
 RAIZ = Path(__file__).resolve().parents[1]

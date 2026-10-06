@@ -5,11 +5,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-Origin = Literal["documento", "grafico", "audio"]
+Origin = Literal["documento", "grafico", "audio", "mercado", "sec"]
 
 
 class Citation(BaseModel):
-    """Referencia a la fuente de una afirmación, p.ej. «documento p.3», «grafico» o «audio»."""
+    """Referencia a la fuente de una afirmación, p.ej. «documento p.3», «grafico», «audio», «mercado» o «sec»."""
 
     origin: Origin
     location: str = ""
@@ -51,6 +51,7 @@ class AnalysisReport(BaseModel):
     chart_reading: Finding | None = None
     management_statements: list[Finding] = []
     correlations: list[Finding] = []
+    contradictions: list[Finding] = []  # discrepancias entre modalidades (informe/gráfico/audio)
     limitations: list[str] = []
     spoken_summary: str = Field(min_length=1)
 

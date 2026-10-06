@@ -5,12 +5,20 @@ los SDK (anthropic, openai) viven únicamente en las implementaciones de provide
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Protocol, Sequence, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 
 class ProviderError(Exception):
-    """Fallo controlado de un proveedor (red, cuota, respuesta inválida...)."""
+    """Fallo controlado de un proveedor (red, cuota, respuesta inválida...).
+
+    `cost_usd` recoge el coste real si la llamada se cobró pese a fallar (p.ej. respuesta cortada).
+    """
+
+    def __init__(self, message: str = "", cost_usd: float | None = None) -> None:
+        super().__init__(message)
+        self.cost_usd = cost_usd
 
 
 @dataclass(frozen=True)
@@ -29,6 +37,8 @@ class TextResult:
     model: str
     tokens_in: int = 0
     tokens_out: int = 0
+    cost_usd: float | None = None  # coste real si el proveedor lo informa (p.ej. OpenRouter)
+    reasoning_tokens: int = 0  # tokens de razonamiento (incluidos en tokens_out), si se informan
 
 
 @dataclass(frozen=True)
@@ -38,6 +48,9 @@ class TranscriptionResult:
     text: str
     model: str
     duration_s: float = 0.0
+    cost_usd: float | None = None
+    notes: tuple[str, ...] = ()  # incidencias para la traza (p.ej. reintento por truncado)
+    warnings: tuple[str, ...] = ()  # avisos para el usuario
 
 
 @dataclass(frozen=True)
@@ -48,6 +61,7 @@ class SpeechResult:
     mime: str
     model: str
     chars: int = 0
+    cost_usd: float | None = None
 
 
 @dataclass(frozen=True)
@@ -57,6 +71,17 @@ class ImageResult:
     image: bytes
     mime: str
     model: str
+    cost_usd: float | None = None
+
+
+@dataclass(frozen=True)
+class EmbeddingResult:
+    """Vectores de embeddings (uno por texto, en el mismo orden) y su consumo."""
+
+    vectors: list[list[float]]
+    model: str
+    tokens: int = 0
+    cost_usd: float | None = None
 
 
 @runtime_checkable
@@ -96,6 +121,28 @@ class ImageProvider(Protocol):
     def generate(self, prompt: str) -> ImageResult: ...
 
 
+Capability = Literal["llm", "vision", "stt", "tts", "image", "embeddings"]
+Backend = Literal["openrouter", "anthropic", "openai", "mock"]
+
+
+@runtime_checkable
+class EmbeddingProvider(Protocol):
+    """Embeddings multilingües para la recuperación semántica."""
+
+    def embed(
+        self, texts: Sequence[str], kind: Literal["query", "document"] = "document"
+    ) -> EmbeddingResult: ...
+
+
+@dataclass(frozen=True)
+class ProviderInfo:
+    """Qué backend y modelo atiende una capacidad (para mostrarlo en la UI)."""
+
+    capability: str
+    backend: str
+    model: str
+
+
 @dataclass(frozen=True)
 class Providers:
     """Conjunto de proveedores que recibe el orquestador (reales o simulados)."""
@@ -105,4 +152,30 @@ class Providers:
     stt: STTProvider
     tts: TTSProvider
     image: ImageProvider
-    is_demo: bool = False
+    embeddings: EmbeddingProvider
+    info: tuple[ProviderInfo, ...] = ()
+    warnings: tuple[str, ...] = ()  # capacidades degradadas a simulado por configuración
+
+    def _backends(self) -> dict[str, str]:
+        """Backend por capacidad: de `info` o, si falta, inferido del módulo de cada proveedor."""
+        if self.info:
+            return {i.capability: i.backend for i in self.info}
+        objetos = {
+            "llm": self.llm, "vision": self.vision, "stt": self.stt, "tts": self.tts,
+            "image": self.image, "embeddings": self.embeddings,
+        }
+        return {
+            c: "mock" if type(o).__module__ == "finlens.providers.mock" else "real"
+            for c, o in objetos.items()
+        }
+
+    @property
+    def mock_capabilities(self) -> tuple[str, ...]:
+        """Capacidades atendidas por proveedores simulados."""
+        return tuple(c for c, b in self._backends().items() if b == "mock")
+
+    @property
+    def is_demo(self) -> bool:
+        """True solo si todas las capacidades son simuladas."""
+        backends = self._backends()
+        return len(self.mock_capabilities) == len(backends)

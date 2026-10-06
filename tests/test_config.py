@@ -4,7 +4,8 @@ import pytest
 from finlens.config import Settings
 
 VARIABLES = (
-    "DEMO_MODE", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "LLM_MODEL", "PRICE_STT_PER_MINUTE",
+    "DEMO_MODE", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "LLM_MODEL",
+    "PRICE_STT_PER_MINUTE", "LLM_MIN_OUTPUT_TOKENS", "LLM_PROVIDER", "OPENROUTER_LLM_MODEL",
 )
 
 
@@ -31,20 +32,33 @@ def test_demo_mode_fuerza_demo_aunque_haya_claves() -> None:
     assert "DEMO_MODE" in (settings.demo_reason or "")
 
 
-def test_con_ambas_claves_usa_apis_reales() -> None:
-    settings = crear(anthropic_api_key="x", openai_api_key="y")
-    assert not settings.is_demo
-    assert settings.demo_reason is None
-
-
-def test_una_sola_clave_sigue_en_demo() -> None:
-    settings = crear(anthropic_api_key="x")
-    assert settings.is_demo
-    assert "OPENAI_API_KEY" in (settings.demo_reason or "")
+def test_con_cualquier_clave_ya_no_es_demo_global() -> None:
+    # La decisión fina es por capacidad (ver test_registry); aquí solo "todo simulado o no".
+    for clave in ("openrouter_api_key", "anthropic_api_key", "openai_api_key"):
+        settings = crear(**{clave: "x"})
+        assert not settings.is_demo and settings.demo_reason is None
 
 
 def test_clave_en_blanco_cuenta_como_ausente() -> None:
-    assert crear(anthropic_api_key="   ", openai_api_key="y").is_demo
+    settings = crear(openrouter_api_key="   ", anthropic_api_key=" ")
+    assert settings.is_demo and not settings.has_openrouter_key and not settings.has_anthropic_key
+
+
+def test_valores_por_defecto_de_openrouter_y_tokens() -> None:
+    settings = crear()
+    assert settings.llm_provider == "auto" and settings.image_provider == "auto"
+    assert settings.openrouter_llm_model == "anthropic/claude-sonnet-5.5"
+    assert settings.openrouter_tts_voice == "ef_dora" and settings.llm_min_output_tokens == 4000
+
+
+def test_los_proveedores_y_modelos_se_leen_del_entorno(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    monkeypatch.setenv("OPENROUTER_LLM_MODEL", "otro/modelo")
+    monkeypatch.setenv("LLM_MIN_OUTPUT_TOKENS", "123")
+    settings = crear()
+    assert (settings.llm_provider, settings.openrouter_llm_model, settings.llm_min_output_tokens) == (
+        "mock", "otro/modelo", 123,
+    )
 
 
 def test_variables_de_entorno_sobrescriben_modelo_y_tarifa(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -57,3 +71,10 @@ def test_variables_de_entorno_sobrescriben_modelo_y_tarifa(monkeypatch: pytest.M
 
 def test_las_claves_no_aparecen_en_el_repr() -> None:
     assert "secreto-123" not in repr(crear(anthropic_api_key="secreto-123"))
+    assert "secreto-456" not in repr(crear(openrouter_api_key="secreto-456"))
+
+
+def test_sec_user_agent_se_lee_del_entorno(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert crear().sec_user_agent == ""
+    monkeypatch.setenv("SEC_USER_AGENT", "FinLens academic project a@b.com")
+    assert crear().sec_user_agent == "FinLens academic project a@b.com"

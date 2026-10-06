@@ -43,6 +43,23 @@ def silent_wav(seconds: int = 1, rate: int = 8000) -> bytes:
     return buffer.getvalue()
 
 
+def measure_audio_duration(audio: bytes) -> float | None:
+    """Duración real (s) de un audio mp3/m4a/ogg/flac/wav con mutagen; None si no se puede medir."""
+    try:
+        with wave.open(io.BytesIO(audio)) as wav:
+            return wav.getnframes() / wav.getframerate()
+    except (wave.Error, EOFError, ZeroDivisionError):
+        pass
+    try:
+        import mutagen
+
+        ficha = mutagen.File(io.BytesIO(audio))
+        largo = getattr(getattr(ficha, "info", None), "length", None)
+        return float(largo) if largo else None
+    except Exception:  # mutagen lanza tipos muy variados con ficheros corruptos
+        return None
+
+
 def detect_image_mime(data: bytes) -> str | None:
     """Tipo MIME real de una imagen según su firma, o None si no es PNG, JPEG, GIF ni WebP."""
     if data.startswith(_FIRMA_PNG):

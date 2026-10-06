@@ -46,3 +46,70 @@ def test_los_medios_se_cachean_por_separado_segun_lo_solicitado() -> None:
     assert cache.get_media("k") == "completo"
     assert cache.get_media("k", with_image=False) == "solo audio"
     assert cache.get_media("k", with_audio=False) is None
+
+
+def test_expulsa_el_analisis_menos_usado_al_superar_el_tope() -> None:
+    cache = AnalysisCache(max_entries=2)
+    cache.put_analysis("a", "A")  # type: ignore[arg-type]
+    cache.put_analysis("b", "B")  # type: ignore[arg-type]
+    assert cache.get_analysis("a") == "A"  # "a" pasa a ser la más reciente
+    cache.put_analysis("c", "C")  # type: ignore[arg-type]
+    assert cache.get_analysis("b") is None
+    assert cache.get_analysis("a") == "A" and cache.get_analysis("c") == "C"
+
+
+def test_el_tope_por_defecto_es_16() -> None:
+    cache = AnalysisCache()
+    for i in range(20):
+        cache.put_analysis(f"k{i}", i)  # type: ignore[arg-type]
+    assert cache.get_analysis("k0") is None and cache.get_analysis("k3") is None
+    assert cache.get_analysis("k4") == 4 and cache.get_analysis("k19") == 19
+    assert sum(cache.get_analysis(f"k{i}") is not None for i in range(20)) == 16
+
+
+def test_reescribir_una_clave_no_cuenta_dos_veces() -> None:
+    cache = AnalysisCache(max_entries=2)
+    for valor in ("1", "2", "3"):
+        cache.put_analysis("a", valor)  # type: ignore[arg-type]
+    cache.put_analysis("b", "B")  # type: ignore[arg-type]
+    assert cache.get_analysis("a") == "3" and cache.get_analysis("b") == "B"
+
+
+def test_los_medios_tambien_tienen_tope() -> None:
+    cache = AnalysisCache(max_entries=1)
+    for i in range(10):
+        cache.put_media(f"k{i}", i)  # type: ignore[arg-type]
+    assert cache.get_media("k0") is None and cache.get_media("k9") == 9
+
+
+def test_tope_invalido() -> None:
+    import pytest
+
+    with pytest.raises(ValueError):
+        AnalysisCache(max_entries=0)
+
+
+def test_la_clave_cambia_con_los_modelos_y_backends() -> None:
+    from finlens.providers.base import ProviderInfo
+
+    a = (ProviderInfo("llm", "openrouter", "m1"),)
+    b = (ProviderInfo("llm", "openrouter", "m2"),)
+    c = (ProviderInfo("llm", "anthropic", "m1"),)
+    claves = {cache_key(BASE, demo=False, max_pdf_chars=10, providers_info=i) for i in (a, b, c, ())}
+    assert len(claves) == 4
+
+
+def test_la_cache_es_segura_entre_hilos() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    cache = AnalysisCache(max_entries=8)
+
+    def usar(i: int) -> None:
+        for j in range(50):
+            cache.put_analysis(f"k{(i * 7 + j) % 20}", j)  # type: ignore[arg-type]
+            cache.get_analysis(f"k{j % 20}")
+            cache.put_media(f"k{j % 20}", j)  # type: ignore[arg-type]
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        list(pool.map(usar, range(6)))
+    assert len(cache._analisis) <= 8 and len(cache._medios) <= 32
