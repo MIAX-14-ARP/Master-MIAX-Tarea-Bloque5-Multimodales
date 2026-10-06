@@ -63,7 +63,7 @@ from finlens.sources.base import (  # noqa: E402
     PriceSeries,
     SourceError,
 )
-from finlens.sources.registry import MarketSources, build_sources  # noqa: E402
+from finlens.sources.registry import MarketSources, build_sources, simbolo_visible  # noqa: E402
 
 log = logging.getLogger("finlens.pipeline")
 T = TypeVar("T")
@@ -325,7 +325,7 @@ def _resolve_question(inp: AnalysisInput, transcript: str | None) -> str:
         return escrita
     if not inp.pdf and inp.ticker.strip():
         return (
-            f"Resume la situación de mercado de {inp.ticker.strip().upper()}: tendencia, niveles relevantes, "
+            f"Resume la situación de mercado de {simbolo_visible(inp.ticker)}: tendencia, niveles relevantes, "
             "riesgos y, si hay fundamentales, su evolución."
         )
     return DEFAULT_QUESTION

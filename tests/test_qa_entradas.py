@@ -5,8 +5,15 @@ import pytest
 from _mercado import cargar, cliente
 from finlens.sources.base import RANGE_DAYS, SourceError, validar_rango
 from finlens.sources.hyperliquid import HyperliquidSource
-from finlens.sources.mock import CRIPTO_SIMULADAS, MockFundamentals, MockPrices
-from finlens.sources.registry import build_sources, normalizar_ticker, resolve_market
+from finlens.sources.mock import CRIPTO_SIMULADAS, MockDerivatives, MockFundamentals, MockPrices
+from finlens.sources.registry import (
+    CRIPTOS_PRINCIPALES,
+    MarketSources,
+    build_sources,
+    normalizar_ticker,
+    resolve_market,
+    simbolo_visible,
+)
 from finlens.sources.sec_edgar import SecEdgar
 
 
@@ -69,14 +76,24 @@ def test_punto_o_circunflejo_es_accion_sin_consultar_red() -> None:
 
 
 def test_ticker_de_la_sec_gana_a_hyperliquid() -> None:
-    # BTC está en el universo de la fixture; si la SEC lo conoce, es una acción.
-    assert resolve_market("BTC", hl(), SecFalsa({"BTC"})) == "accion"
-    assert resolve_market("BTC", hl(), SecFalsa(set())) == "cripto"
+    # ETH y BTC están en el universo de la fixture; MET-like: si la SEC lo conoce y no es cripto principal, es acción.
+    universo = hl().universe()
+    otro = next(t for t in sorted(universo) if t not in CRIPTOS_PRINCIPALES)
+    assert resolve_market(otro, hl(), SecFalsa({otro})) == "accion"
+    assert resolve_market(otro, hl(), SecFalsa(set())) == "cripto"
+
+
+@pytest.mark.parametrize("ticker", sorted(CRIPTOS_PRINCIPALES))
+def test_cripto_principal_gana_al_etf_de_la_sec(ticker: str) -> None:
+    # BTC, ETH y XRP son también ETFs en la SEC (Grayscale, Bitwise): el usuario quiere la cripto.
+    assert resolve_market(ticker, hl_roto(), SecFalsa({ticker})) == "cripto"
+    assert resolve_market(ticker.lower(), hl_roto(), SecFalsa({ticker})) == "cripto"
 
 
 def test_fallos_de_red_degradan_a_la_siguiente_regla() -> None:
-    assert resolve_market("BTC", hl(), SecFalsa(set(), falla=True)) == "cripto"
-    assert resolve_market("BTC", hl_roto(), SecFalsa(set(), falla=True)) == "accion"
+    otro = next(t for t in sorted(hl().universe()) if t not in CRIPTOS_PRINCIPALES)
+    assert resolve_market(otro, hl(), SecFalsa(set(), falla=True)) == "cripto"
+    assert resolve_market(otro, hl_roto(), SecFalsa(set(), falla=True)) == "accion"
 
 
 @pytest.mark.parametrize("rango", list(RANGE_DAYS))
@@ -114,3 +131,40 @@ def test_demo_precios_de_cripto_marcada_usan_el_simbolo_limpio() -> None:
 def test_mock_fundamentales_none_para_cripto_simulada() -> None:
     assert MockFundamentals().fetch_fundamentals(" btc ") is None
     assert MockFundamentals().fetch_fundamentals("AAPL") is not None
+
+
+# --- Selector de mercado de la UI (prefijos accion:/cripto:) ---
+
+
+def test_marca_accion_fuerza_accion_sin_consultar_red() -> None:
+    # BTC es cripto principal, pero con «accion:» el usuario pide el ETF de la SEC.
+    assert resolve_market("accion:BTC", hl_roto(), SecFalsa(set(), falla=True)) == "accion"
+    assert resolve_market("ACCION: aapl", hl_roto()) == "accion"
+
+
+@pytest.mark.parametrize("vacio", ["accion:", "ACCION:  "])
+def test_marca_accion_sin_ticker_se_rechaza(vacio: str) -> None:
+    with pytest.raises(SourceError, match="ticker"):
+        resolve_market(vacio, hl())
+
+
+def test_marca_cripto_valida_contra_hyperliquid() -> None:
+    fuentes = MarketSources(yahoo=MockPrices(), hyperliquid=hl(), derivatives=MockDerivatives(), sec=MockFundamentals())
+    with pytest.raises(SourceError, match="no cotiza en Hyperliquid"):
+        fuentes.prices("cripto:AAPL")
+
+
+def test_demo_respeta_las_marcas() -> None:
+    fuentes = build_sources(demo=True)
+    assert fuentes.kind("accion:BTC") == "accion"
+    assert fuentes.prices("accion:btc").symbol == "BTC"
+    assert fuentes.fundamentals_for("accion:aapl") == fuentes.fundamentals_for("AAPL") is not None
+    assert fuentes.kind("cripto:AAPL") == "cripto"
+
+
+@pytest.mark.parametrize(
+    ("entrada", "esperado"),
+    [("accion:aapl", "AAPL"), ("cripto:btc", "BTC"), ("ETH-USD", "ETH"), (" itx.mc ", "ITX.MC")],
+)
+def test_simbolo_visible(entrada: str, esperado: str) -> None:
+    assert simbolo_visible(entrada) == esperado
