@@ -10,10 +10,19 @@ Parameters:
     Type: String
     Default: piettro/Master-MIAX-Tarea-Bloque5-Multimodales
     Description: Repositorio (propietario/nombre) autorizado a desplegar.
-  GitHubBranch:
+  GitHubRepoConIds:
     Type: String
-    Default: master
-    Description: Rama autorizada a desplegar.
+    Default: piettro@11778759/Master-MIAX-Tarea-Bloque5-Multimodales@1406293464
+    Description: >
+      El mismo repositorio con los IDs inmutables de propietario y repo (propietario@id/nombre@id). GitHub
+      emite ya el sub del token OIDC en este formato; se ve en CloudTrail (AssumeRoleWithWebIdentity,
+      userIdentity.userName) o en la API de GitHub (owner.id y id del repositorio).
+  GitHubEnvironment:
+    Type: String
+    Default: produccion
+    Description: >
+      Environment de GitHub autorizado a desplegar (el job lo referencia, asi que el sub del token OIDC es
+      repo:<repo>:environment:<nombre>). Restringe ese environment a la rama master en GitHub.
   CreateOidcProvider:
     Type: String
     Default: "true"
@@ -35,6 +44,7 @@ Resources:
     Type: AWS::ECR::Repository
     Properties:
       RepositoryName: finlens
+      EmptyOnDelete: true
       ImageScanningConfiguration: {ScanOnPush: true}
       LifecyclePolicy:
         LifecyclePolicyText: >
@@ -75,7 +85,10 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepo}:environment:produccion
+                # Lista = cualquiera de los dos formatos del sub (con o sin IDs inmutables).
+                token.actions.githubusercontent.com:sub:
+                  - !Sub repo:${GitHubRepo}:environment:${GitHubEnvironment}
+                  - !Sub repo:${GitHubRepoConIds}:environment:${GitHubEnvironment}
       Policies:
         - PolicyName: desplegar-finlens
           PolicyDocument:
@@ -152,7 +165,8 @@ Resources:
       InstanceType: !Ref InstanceType
       IamInstanceProfile: !Ref PerfilServidor
       SecurityGroupIds: [!GetAtt GrupoSeguridad.GroupId]
-      MetadataOptions: {HttpTokens: required, HttpEndpoint: enabled}
+      # HopLimit 1: los contenedores no alcanzan el IMDS ni las credenciales del rol de la instancia.
+      MetadataOptions: {HttpTokens: required, HttpEndpoint: enabled, HttpPutResponseHopLimit: 1}
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs: {VolumeSize: 12, VolumeType: gp3, Encrypted: true, DeleteOnTermination: true}
@@ -177,18 +191,6 @@ Resources:
       InstanceId: !Ref Servidor
       Tags: [{Key: Project, Value: finlens}]
 
-  AlarmaPresupuesto:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmDescription: FinLens - la CPU del servidor esta al 90 % durante 15 min (posible abuso de la demo)
-      Namespace: AWS/EC2
-      MetricName: CPUUtilization
-      Dimensions: [{Name: InstanceId, Value: !Ref Servidor}]
-      Statistic: Average
-      Period: 300
-      EvaluationPeriods: 3
-      Threshold: 90
-      ComparisonOperator: GreaterThanThreshold
 
 Outputs:
   DeployRoleArn:
