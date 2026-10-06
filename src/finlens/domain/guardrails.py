@@ -30,10 +30,23 @@ _ACCION = (
 )
 _VERBO_RECOMENDACION = (
     r"(?:recom\w+|aconsej\w+|sug\w+|conviene|hay que|es (?:el |la )?(?:momento|hora) de|"
-    r"buen momento para|oportunidad de|aprovech\w+ para|deberias?|debes|deberiais|toca|"
+    r"buen momento para|oportunidad de|aprovech\w+ para|deberi\w+|debes|toca|"
     r"mi consejo es|nuestro consejo es)"
 )
 _IMPERATIVO = r"(?:compre|compren|comprad|venda|vendan|vended)"
+
+# «Precio objetivo» describe una recomendación de valor. Si habla de un tercero no relacionado con un valor
+# (regulador, banco central, inflación) es una magnitud macroeconómica y se permite. Decisión de diseño:
+# solo se exime cuando la frase menciona ese contexto Y no menciona ningún valor (acción, cotización...).
+_PRECIO_OBJETIVO = re.compile(
+    r"\b(?:precio[- ]objetivo|objetivo de precio|valor objetivo|cotizacion objetivo|price target|target price)\b"
+)
+_CONTEXTO_MACRO = re.compile(
+    r"\b(?:regulador\w*|banco central|bce|fed|reserva federal|inflacion|regulator|central bank|ecb)\b"
+)
+_CONTEXTO_VALOR = re.compile(
+    r"\b(?:accion\w*|acciones|valor|titulo\w*|cotizacion|analista\w*|stock|shares?|equity|target price for)\b"
+)
 
 _PATRONES = [
     # «recomiendo comprar», «es un buen momento para vender», «hay que acumular»
@@ -50,16 +63,37 @@ _PATRONES = [
     r"\b(?:sobreponderar|infraponderar|sobreponderad\w+|infraponderad\w+)\b",
     # «buy this stock», «sell now»
     r"\b(?:buy|sell)\s+(?:\w+\s+){0,2}(?:stock|shares|now)\b",
-    # «precio objetivo», «price target»
-    r"\b(?:precio[- ]objetivo|objetivo de precio|valor objetivo|cotizacion objetivo|"
-    r"price target|target price)\b",
+    # «precio objetivo», «price target» (ver _PRECIO_OBJETIVO: la excepción macro se resuelve por frase)
+    _PRECIO_OBJETIVO.pattern,
     # «recomendación de compra», «rating: sobreponderar»
     r"\b(?:recomendacion|rating|calificacion|consejo)\s*:?\s*(?:de\s+)?"
     r"(?:compra|venta|comprar|vender|mantener|neutral|sobreponderar|infraponderar)\b",
     r"\b(?:strong buy|strong sell|buy rating|sell rating|hold rating|overweight|underweight|"
     r"outperform|underperform)\b",
 ]
+_PATRONES += [
+    # condicional: «compraría acciones», «vendería las acciones»
+    r"\b(?:comprari\w+|venderi\w+|acumulari\w+)\s+(?:\w+\s+){0,2}(?:acciones|accion|titulos|valores|posicion|"
+    r"el valor)\b",
+    r"\bmerece\s+la\s+pena\s+(?:comprar|vender|acumular)\b",
+    # inglés: «you should buy», «I recommend buying», «upgrade to buy», «rating: buy»
+    r"\b(?:should|must|ought to|recommend(?:s|ed)?(?: that you| to)?|advise[sd]?(?: to)?)\s+"
+    r"(?:buy|sell|accumulate|buying|selling|accumulating)\b",
+    r"\b(?:recommend|advise|suggest)\w*\s+(?:a\s+)?(?:buy|sell)\b",
+    r"\b(?:upgrade[sd]?|downgrade[sd]?|rated?|initiate[sd]?|reiterate[sd]?)\s+(?:to|at|as|with)?\s*"
+    r"(?:a\s+)?(?:buy|sell|hold|overweight|underweight|outperform|underperform|accumulate)\b",
+    r"\b(?:rating|recommendation|call)\s*:?\s*(?:a\s+)?(?:buy|sell|hold|accumulate|reduce)\b",
+]
+# Patrones que solo valen al principio de una frase (imperativo sin sujeto): «Compra Inditex», «Buy AAPL».
+_PATRONES_INICIO = [
+    r"^(?:compra|vende|acumula|compre|compren|venda|vendan)\s+(?!de\b|del\b|en\b|y\b|e\b|a\b|que\b|como\b)\w+",
+    r"^(?:buy|sell|accumulate)\s+(?!back\b|side\b|and\b|of\b|in\b)\w+",
+    r"^accumulate\b",
+    r"^mantener\s+(?:la|su|tu)\s+posicion\b",
+]
 _REGEX = [re.compile(p) for p in _PATRONES]
+_REGEX_INICIO = [re.compile(p) for p in _PATRONES_INICIO]
+
 
 
 @dataclass(frozen=True)
@@ -84,23 +118,62 @@ class GuardrailResult:
 
 
 def _normalizar(texto: str) -> str:
-    """Minúsculas y sin acentos, para comparar sin depender de la ortografía."""
-    descompuesto = unicodedata.normalize("NFKD", texto.lower())
-    return "".join(c for c in descompuesto if not unicodedata.combining(c))
+    """Minúsculas, sin acentos y sin caracteres invisibles (guion suave, ancho cero, NBSP...)."""
+    visible = "".join(
+        " " if unicodedata.category(c) == "Zs" else c
+        for c in texto
+        if unicodedata.category(c) != "Cf"  # U+00AD, U+200B..U+200F, U+2060, U+FEFF...
+    )
+    descompuesto = unicodedata.normalize("NFKD", visible.lower())
+    sin_acentos = "".join(c for c in descompuesto if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", sin_acentos)
+
+
+_FRASES = re.compile(r"(?<=[.!?;])\s+|\n+")
+
+
+def split_sentences(texto: str) -> list[str]:
+    """Frases del texto (sin tocar su contenido); un salto de línea también separa."""
+    return [f for f in _FRASES.split(texto) if f.strip()]
+
+
+def _detectar_frase(frase: str) -> list[str]:
+    normalizada = _normalizar(frase).strip()
+    encontrados: list[str] = []
+    for regex in _REGEX:
+        for m in regex.finditer(normalizada):
+            texto = m.group(0)
+            if (
+                _PRECIO_OBJETIVO.search(texto)
+                and _CONTEXTO_MACRO.search(normalizada)
+                and not _CONTEXTO_VALOR.search(normalizada)
+            ):
+                continue  # precio objetivo de un regulador / magnitud macro: descriptivo
+            encontrados.append(texto)
+    encontrados += [ini.group(0) for regex in _REGEX_INICIO if (ini := regex.search(normalizada))]
+    return encontrados
 
 
 def detect_recommendations(text: str) -> list[str]:
     """Fragmentos (normalizados) de `text` que parecen una recomendación de inversión."""
-    normalizado = _normalizar(text)
-    return [m.group(0) for regex in _REGEX for m in regex.finditer(normalizado)]
+    return [m for frase in split_sentences(text) for m in _detectar_frase(frase)]
 
 
 def guard_text(text: str, field: str = "texto") -> tuple[str, list[Violation]]:
-    """Devuelve `text` o, si contiene lenguaje de recomendación, el aviso de retirada."""
-    encontrados = detect_recommendations(text)
-    if not encontrados:
+    """Devuelve `text` sin las frases que recomiendan; si no queda ninguna, el aviso de retirada.
+
+    Se retira solo la frase infractora (no el campo entero) para no destrozar un resumen por una frase.
+    """
+    limpias: list[str] = []
+    violaciones: list[Violation] = []
+    for frase in split_sentences(text):
+        encontrados = _detectar_frase(frase)
+        violaciones += [Violation(field, m) for m in encontrados]
+        if not encontrados:
+            limpias.append(frase.strip())
+    if not violaciones:
         return text, []
-    return REMOVED_NOTICE, [Violation(field, m) for m in encontrados]
+    return (" ".join(limpias) if limpias else REMOVED_NOTICE), violaciones
 
 
 def with_disclaimer(text: str) -> str:
@@ -111,13 +184,15 @@ def with_disclaimer(text: str) -> str:
 def _filtrar_findings(
     items: list[Finding], field: str, violations: list[Violation]
 ) -> list[Finding]:
-    """Descarta las afirmaciones con lenguaje de recomendación y registra la infracción."""
+    """Quita de cada afirmación las frases con lenguaje de recomendación; si no queda nada, la descarta."""
     limpios: list[Finding] = []
     for item in items:
-        encontrados = detect_recommendations(item.statement)
-        violations += [Violation(field, m) for m in encontrados]
+        texto, encontrados = guard_text(item.statement, field)
+        violations += encontrados
         if not encontrados:
             limpios.append(item)
+        elif texto != REMOVED_NOTICE:
+            limpios.append(item.model_copy(update={"statement": texto}))
     return limpios
 
 

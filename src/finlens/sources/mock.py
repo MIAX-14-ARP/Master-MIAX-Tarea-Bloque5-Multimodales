@@ -16,6 +16,7 @@ from finlens.sources.base import (
     validar_rango,
 )
 
+CRIPTO_SIMULADAS = frozenset({"BTC", "ETH", "SOL"})  # en demo se tratan como cripto (sin SEC)
 FIN_SIMULADO = datetime(2026, 6, 30, tzinfo=UTC)  # fecha fija: la serie no depende del reloj
 _CIFRAS_MUSD = (  # (tag, etiqueta, valor del último ejercicio en M USD)
     ("RevenueFromContractWithCustomerExcludingAssessedTax", "Ingresos", 12_500.0),
@@ -75,6 +76,8 @@ class MockDerivatives:
 class MockFundamentals:
     def fetch_fundamentals(self, ticker: str) -> Fundamentals | None:
         simbolo = ticker.strip().upper()
+        if simbolo in CRIPTO_SIMULADAS:
+            return None  # las criptomonedas no reportan a la SEC
         escala = 1 + (_semilla(simbolo) % 5) / 10
         hechos = []
         for tag, etiqueta, musd in _CIFRAS_MUSD:

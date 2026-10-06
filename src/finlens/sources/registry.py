@@ -14,21 +14,65 @@ from finlens.sources.base import (
     SourceError,
 )
 from finlens.sources.hyperliquid import HyperliquidSource
-from finlens.sources.mock import MockDerivatives, MockFundamentals, MockPrices
+from finlens.sources.mock import CRIPTO_SIMULADAS, MockDerivatives, MockFundamentals, MockPrices
 from finlens.sources.sec_edgar import SecEdgar
 from finlens.sources.yahoo import YahooPrices
 
+PREFIJO_CRIPTO = "CRIPTO:"
+SUFIJOS_CRIPTO = ("-PERP", "-USDT", "-USD")
 
-def resolve_market(ticker: str, hyperliquid: HyperliquidSource | None = None) -> MarketKind:
-    """«cripto» si el símbolo cotiza en Hyperliquid (universo cacheado); si no, «accion».
 
-    Limitación: un ticker de acción que coincida con el nombre de un perpetuo (raro) se tomaría por cripto.
+def normalizar_ticker(ticker: str) -> tuple[str, bool]:
+    """(símbolo limpio, ¿marcado explícitamente como cripto?).
+
+    Marcas: prefijo `cripto:` o sufijo `-PERP`, `-USD`, `-USDT`; se quitan para consultar Hyperliquid
+    (`BTC-USD` → `BTC`). Sin marca, el símbolo solo se pasa a mayúsculas y se recorta.
     """
     simbolo = ticker.strip().upper()
+    explicito = False
+    if simbolo.startswith(PREFIJO_CRIPTO):
+        simbolo, explicito = simbolo[len(PREFIJO_CRIPTO) :].strip(), True
+    for sufijo in SUFIJOS_CRIPTO:
+        if simbolo.endswith(sufijo) and len(simbolo) > len(sufijo):
+            simbolo, explicito = simbolo[: -len(sufijo)], True
+            break
+    return simbolo, explicito
+
+
+def resolve_market(
+    ticker: str,
+    hyperliquid: HyperliquidSource | None = None,
+    sec: SecEdgar | None = None,
+) -> MarketKind:
+    """Clasifica el ticker en «cripto» o «accion». Orden de reglas:
+
+    1. marca explícita de cripto (`cripto:X`, `X-PERP`, `X-USD`, `X-USDT`) → cripto;
+    2. símbolo con «.» o «^» (ITX.MC, ^GSPC) → acción, sin consultar Hyperliquid;
+    3. ticker en el mapa de la SEC → acción (MET, IP, DASH... existen también como perpetuos);
+    4. símbolo en el universo de Hyperliquid → cripto;
+    5. cualquier otro caso → acción.
+
+    Los fallos de red de la SEC o de Hyperliquid no rompen la clasificación: se degrada a la siguiente regla.
+    """
+    simbolo, explicito = normalizar_ticker(ticker)
     if not simbolo:
         raise SourceError("Indica un ticker.")
-    fuente = hyperliquid or HyperliquidSource()
-    return "cripto" if simbolo in fuente.universe() else "accion"
+    if explicito:
+        return "cripto"
+    if "." in simbolo or "^" in simbolo:
+        return "accion"
+    if sec is not None:
+        try:
+            if sec.cik_for(simbolo) is not None:
+                return "accion"
+        except SourceError:
+            pass
+    try:
+        if simbolo in (hyperliquid or HyperliquidSource()).universe():
+            return "cripto"
+    except SourceError:
+        pass
+    return "accion"
 
 
 @dataclass
@@ -43,19 +87,22 @@ class MarketSources:
 
     def kind(self, ticker: str) -> MarketKind:
         if self.demo:
-            return "cripto" if ticker.strip().upper() in {"BTC", "ETH", "SOL"} else "accion"
-        assert isinstance(self.hyperliquid, HyperliquidSource)
-        return resolve_market(ticker, self.hyperliquid)
+            simbolo, explicito = normalizar_ticker(ticker)
+            return "cripto" if explicito or simbolo in CRIPTO_SIMULADAS else "accion"
+        hl = self.hyperliquid if isinstance(self.hyperliquid, HyperliquidSource) else None
+        sec = self.sec if isinstance(self.sec, SecEdgar) else None
+        return resolve_market(ticker, hl, sec)
 
     def prices(self, ticker: str, rango: str = "6mo") -> PriceSeries:
-        fuente = self.hyperliquid if self.kind(ticker) == "cripto" else self.yahoo
-        return fuente.fetch_prices(ticker, rango)
+        if self.kind(ticker) == "cripto":
+            return self.hyperliquid.fetch_prices(normalizar_ticker(ticker)[0], rango)
+        return self.yahoo.fetch_prices(ticker, rango)
 
     def derivatives_for(self, ticker: str) -> DerivativesSnapshot | None:
         """Derivados solo para cripto; None para acciones."""
         if self.kind(ticker) != "cripto":
             return None
-        return self.derivatives.fetch_derivatives(ticker)
+        return self.derivatives.fetch_derivatives(normalizar_ticker(ticker)[0])
 
     def fundamentals_for(self, ticker: str) -> Fundamentals | None:
         """Fundamentales SEC solo para acciones; None si es cripto o no reporta a la SEC."""

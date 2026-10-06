@@ -27,6 +27,7 @@ Verdict = Literal["confirmada", "discrepa", "no_verificable"]
 MARGEN_RANGO_INF = 0.97  # un nivel vale si está en [mín × 0,97, máx × 1,03]
 MARGEN_RANGO_SUP = 1.03
 TOLERANCIA_PIVOTE = 0.03  # ±3 % respecto a un soporte/resistencia calculado
+MIN_ENTERO_PRECIO = 10  # los enteros sin decimales menores que 10 («2 intentos») no se toman como precio
 PUNTUACION_NEUTRA = 0.5  # sin afirmaciones verificables no hay evidencia ni a favor ni en contra
 # ---------------------------------------------------------------------------------------------
 
@@ -52,7 +53,12 @@ class ChartCheck:
 
 # Número con separadores de miles/decimales (punto o coma) y sufijo opcional «k» (63k = 63 000).
 _NUMERO = re.compile(r"(?<![\w.,])(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)(\s?[kK]\b)?(\s?%)?")
-_ANTES_NO_PRECIO = re.compile(r"(?:SMA|EMA|RSI|MA|MM|MACD|media(?:s)?(?:\s+móvil(?:es)?)?|per[ií]odo)\s*$", re.IGNORECASE)
+_INDICADOR = re.compile(r"\b(?:SMA|EMA|RSI|MA|MM|MACD|medias?|sesion(?:es)?|velas?|d[ií]as?)\b", re.IGNORECASE)
+# Palabras que reabren un contexto de precio: tras ellas, un indicador anterior ya no afecta al número.
+_PALABRA_PRECIO = re.compile(r"\b(?:soporte|resistencia|precio|cierre|cierra|m[aá]ximo|m[ií]nimo|nivel|support|resistance)\b", re.IGNORECASE)
+_PERIODO_FINAL = re.compile(r"per[ií]odo\s*$", re.IGNORECASE)
+_CORTE_CLAUSULA = re.compile(r"[,;:()]|\d")
+VENTANA_INDICADOR = 6  # palabras previas que se miran para saber si el número es el valor de un indicador
 _MESES = (
     r"(?:ene(?:ro)?|feb(?:rero)?|mar(?:zo)?|abr(?:il)?|may(?:o)?|jun(?:io)?|jul(?:io)?|ago(?:sto)?"
     r"|sep(?:t(?:iembre)?)?|oct(?:ubre)?|nov(?:iembre)?|dic(?:iembre)?)"
@@ -69,6 +75,7 @@ _VOLUMEN = re.compile(r"\bvol[uú]men(?:es)?\b|\bvolume\b", re.IGNORECASE)
 _SOPORTE_RESISTENCIA = re.compile(r"soporte|resistencia|support|resistance", re.IGNORECASE)
 _SEPARADOR_ZONA = re.compile(r"\s*(?:-|–|—|a|y|hasta|and|to)\s*", re.IGNORECASE)
 _FRASES = re.compile(r"(?<=[.;!?])\s+|\n+")
+_ABREV_MES = re.compile(rf"\b({_MESES})\.", re.IGNORECASE)  # «6 oct. 2026»: el punto no cierra la frase
 
 
 def _lecturas(token: str, kilo: bool) -> list[float]:
@@ -90,24 +97,43 @@ def _lecturas(token: str, kilo: bool) -> list[float]:
     return [float(f"{partes[0]}.{partes[1]}") * factor]
 
 
-def _no_es_precio(texto: str, m: re.Match[str]) -> bool:
+def _tras_indicador(antes: str) -> bool:
+    """¿Las palabras previas (misma cláusula, sin otro número ni palabra de precio) nombran un indicador?"""
+    corte = max((c.end() for c in _CORTE_CLAUSULA.finditer(antes)), default=0)
+    precio = max((c.end() for c in _PALABRA_PRECIO.finditer(antes)), default=0)
+    palabras = antes[max(corte, precio) :].split()[-VENTANA_INDICADOR:]
+    segmento = " ".join(palabras)
+    return bool(_INDICADOR.search(segmento) or _PERIODO_FINAL.search(segmento))
+
+
+def _no_es_precio(texto: str, m: re.Match[str], rango: tuple[float, float] | None = None) -> bool:
     """¿El número es un porcentaje, un periodo, parte de una fecha o el parámetro de un indicador?"""
     if m.group(3):  # porcentaje
         return True
     antes, despues = texto[: m.start()], texto[m.end() :]
-    if _ANTES_NO_PRECIO.search(antes) or _DESPUES_NO_PRECIO.match(texto, m.end()):
+    if _tras_indicador(antes) or _DESPUES_NO_PRECIO.match(texto, m.end()):
         return True
     if _FECHA_ANTES.search(antes[-2:]) or _FECHA_DESPUES.match(despues[:2]):
         return True  # 2026-04-06, 06/04/2026
     token = m.group(1)
-    return token.isdigit() and 1900 <= int(token) <= 2100 and bool(_ANTES_ANIO.search(antes))
+    if token.isdigit() and not m.group(2):
+        valor = int(token)
+        if valor < MIN_ENTERO_PRECIO:  # «2 intentos», «3 veces»: recuentos, no precios
+            return True
+        if 1900 <= valor <= 2100:  # año: en contexto de fecha siempre; suelto, salvo que el rango lo contenga
+            if _ANTES_ANIO.search(antes):
+                return True
+            return rango is not None and not (rango[0] <= valor <= rango[1])
+    return False
 
 
-def _candidatos(texto: str) -> list[tuple[str, list[float], int, int]]:
+def _candidatos(
+    texto: str, rango: tuple[float, float] | None = None
+) -> list[tuple[str, list[float], int, int]]:
     """(texto, lecturas posibles, inicio, fin) de cada candidato a precio del texto."""
     salida: list[tuple[str, list[float], int, int]] = []
     for m in _NUMERO.finditer(texto):
-        if _no_es_precio(texto, m):
+        if _no_es_precio(texto, m, rango):
             continue
         try:
             salida.append((m.group(0).strip(), _lecturas(m.group(1), bool(m.group(2))), m.start(), m.end()))
@@ -116,8 +142,8 @@ def _candidatos(texto: str) -> list[tuple[str, list[float], int, int]]:
     return salida
 
 
-def _niveles_citados(texto: str) -> list[tuple[str, list[float]]]:
-    return [(t, lec) for t, lec, _ini, _fin in _candidatos(texto)]
+def _niveles_citados(texto: str, rango: tuple[float, float] | None = None) -> list[tuple[str, list[float]]]:
+    return [(t, lec) for t, lec, _ini, _fin in _candidatos(texto, rango)]
 
 
 def _en_rango(valor: float, tech: TechnicalSummary) -> bool:
@@ -178,7 +204,7 @@ def _items_frase(frase: str, tech: TechnicalSummary, volumen: bool, tema_volumen
     items: list[ChartCheckItem] = []
     es_sr = bool(_SOPORTE_RESISTENCIA.search(frase))
     resumen = textwrap.shorten(frase.strip(), width=90, placeholder="…")
-    cand = _candidatos(frase)
+    cand = _candidatos(frase, (tech.range_low * MARGEN_RANGO_INF, tech.range_high * MARGEN_RANGO_SUP))
     i = 0
     while i < len(cand):
         token, lecturas, _ini, fin = cand[i]
@@ -206,7 +232,7 @@ def _items_texto(texto: str, tech: TechnicalSummary) -> list[ChartCheckItem]:
     tema_volumen = volumen and bool(_VOLUMEN.match(texto.strip()))
     return [
         it
-        for frase in _FRASES.split(texto)
+        for frase in _FRASES.split(_ABREV_MES.sub(r"\1", texto))
         if frase.strip()
         for it in _items_frase(frase, tech, volumen, tema_volumen)
     ]

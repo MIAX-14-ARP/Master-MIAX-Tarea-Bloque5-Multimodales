@@ -45,8 +45,9 @@ def test_resolve_market_ticker_vacio_y_fallo_de_red() -> None:
     def roto(req: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("x", request=req)
 
-    with pytest.raises(SourceError):
-        resolve_market("BTC", HyperliquidSource(client=cliente(roto)))
+    # sin red se degrada a la regla por defecto en lugar de romper la clasificación
+    assert resolve_market("BTC", HyperliquidSource(client=cliente(roto))) == "accion"
+    assert resolve_market("BTC-PERP", HyperliquidSource(client=cliente(roto))) == "cripto"
 
 
 def test_mock_cumple_protocolos() -> None:

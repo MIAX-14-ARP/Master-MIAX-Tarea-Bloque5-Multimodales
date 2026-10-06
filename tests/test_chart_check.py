@@ -172,7 +172,7 @@ def test_resultado_inmutable_y_con_tupla() -> None:
 
 
 def test_afirmaciones_de_descripcion_y_observaciones_se_revisan_todas() -> None:
-    c = check_chart_reading(lectura("alcista", "Cierre cerca de 999.", "Otro nivel en 5"), tecnicos())
+    c = check_chart_reading(lectura("alcista", "Cierre cerca de 999.", "Otro nivel en 5000"), tecnicos())
     assert veredictos(c) == ["confirmada", "discrepa", "discrepa"]
 
 
