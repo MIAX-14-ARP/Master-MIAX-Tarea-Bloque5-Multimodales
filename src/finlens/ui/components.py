@@ -14,7 +14,7 @@ from typing import Any
 from finlens.domain.schemas import Citation, Finding, KeyFigure
 
 CAP_ORDER = (("llm", "LLM"), ("vision", "Visión"), ("stt", "STT"), ("tts", "TTS"), ("image", "Imagen"),
-             ("embeddings", "Embeddings"))
+             ("embeddings", "Embed."))
 _ORIGEN_CORTO = {"documento": "DOC", "grafico": "GRÁF", "audio": "AUDIO", "mercado": "MERC", "sec": "SEC"}
 _ORIGEN_BASE = ("documento", "grafico", "audio")
 

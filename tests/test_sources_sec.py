@@ -5,8 +5,8 @@ from typing import Any
 
 import httpx2 as httpx
 import pytest
-from _mercado import cargar, cliente
 
+from _mercado import cargar, cliente
 from finlens.sources.base import FundamentalsSource, SourceError
 from finlens.sources.sec_edgar import SecEdgar, parsear_companyfacts
 

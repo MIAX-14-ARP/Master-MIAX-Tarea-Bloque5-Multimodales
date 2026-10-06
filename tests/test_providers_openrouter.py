@@ -8,7 +8,7 @@ import pytest
 
 from finlens.providers import base
 from finlens.providers.base import Message, ProviderError
-from finlens.providers.media import solid_png
+from finlens.providers.media import silent_wav, solid_png
 from finlens.providers.openrouter_provider import (
     BASE_URL,
     OpenRouterImage,
@@ -18,12 +18,13 @@ from finlens.providers.openrouter_provider import (
     OpenRouterVision,
     make_client,
 )
-from finlens.ui.demo_samples import demo_audio_wav
 
 
 def error_estado(estado: int):
     return openai.APIStatusError(
-        "fallo", response=httpx.Response(estado, request=httpx.Request("POST", "https://x")), body=None
+        "fallo upstream secreto-upstream",
+        response=httpx.Response(estado, request=httpx.Request("POST", "https://x")),
+        body={"error": {"message": "fallo", "metadata": {"raw": "secreto-upstream"}}},
     )
 
 
@@ -140,12 +141,14 @@ def cliente_stt(resultado=None, error=None):
     return SimpleNamespace(audio=SimpleNamespace(transcriptions=SimpleNamespace(create=espia))), espia
 
 
-def test_stt_pide_espanol_y_verbose_json() -> None:
+def test_stt_pide_verbose_json_y_solo_envia_idioma_si_se_configura() -> None:
     cliente, espia = cliente_stt()
     stt = OpenRouterSTT("k", "openai/whisper-large-v3-turbo", client=cliente)
     r = stt.transcribe(b"audio", "a.mp3")
     llamada = espia.llamadas[0]
-    assert llamada["language"] == "es" and llamada["response_format"] == "verbose_json"
+    assert "language" not in llamada and llamada["response_format"] == "verbose_json"
+    OpenRouterSTT("k", "m", client=cliente, language="es").transcribe(b"audio", "a.mp3")
+    assert espia.llamadas[1]["language"] == "es"
     assert llamada["file"] == ("a.mp3", b"audio") and llamada["model"] == "openai/whisper-large-v3-turbo"
     assert (r.text, r.duration_s, r.cost_usd) == ("hola", 12.5, 0.001)
     assert isinstance(stt, base.STTProvider)
@@ -153,7 +156,7 @@ def test_stt_pide_espanol_y_verbose_json() -> None:
 
 def test_stt_estima_la_duracion_si_no_viene() -> None:
     cliente, _ = cliente_stt(SimpleNamespace(text="x"))
-    r = OpenRouterSTT("k", "m", client=cliente).transcribe(demo_audio_wav(), "demo.wav")
+    r = OpenRouterSTT("k", "m", client=cliente).transcribe(silent_wav(2, 8000), "demo.wav")
     assert r.duration_s == pytest.approx(2.0) and r.cost_usd is None
 
 
@@ -255,7 +258,7 @@ def test_los_errores_http_se_traducen_en_los_cinco_proveedores(error: Exception,
     for llamada in llamadas:
         with pytest.raises(ProviderError, match=fragmento) as info:
             llamada()
-        assert "sk-" not in str(info.value)
+        assert "secreto-upstream" not in str(info.value)
 
 
 def test_make_client_apunta_a_openrouter_con_cabecera_de_atribucion() -> None:

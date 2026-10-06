@@ -57,9 +57,16 @@ class Summary:
     mean_total_seconds: float
     max_total_seconds: float
     mean_cost: float
+    real_cost_share: float = 0.0  # fracción del coste que informó el proveedor (el resto es tarifa)
 
     def step(self, name: str) -> StepStats | None:
         return next((s for s in self.steps if s.step == name), None)
+
+
+def _cuota_real(records: Sequence[RunRecord]) -> float:
+    pasos = [p for r in records for p in r.steps]
+    total = sum(p.cost_usd for p in pasos)
+    return sum(p.cost_usd for p in pasos if p.cost_real) / total if total else 0.0
 
 
 def summarize(records: Sequence[RunRecord]) -> Summary:
@@ -100,6 +107,7 @@ def summarize(records: Sequence[RunRecord]) -> Summary:
         mean_total_seconds=mean(total),
         max_total_seconds=max(total),
         mean_cost=mean(sum(p.cost_usd for p in r.steps) for r in records),
+        real_cost_share=_cuota_real(records),
     )
 
 
@@ -118,6 +126,7 @@ def _componentes(resumen: Summary) -> list[tuple[str, str, float]]:
         ("STT", "Transcripción de audio", "min"),
         ("TTS", "Resumen en audio", "caracteres"),
         ("Imagen", "Generación de infografía", "imagen"),
+        ("Embeddings", "Índice semántico (embeddings)", "tokens"),
     ):
         stats = resumen.step(paso)
         if stats is None:
@@ -159,7 +168,15 @@ def to_markdown(
         "|---|---|---|",
     ]
     lineas += [f"| {c} | {uso} | {coste:.4f} |" for c, uso, coste in _componentes(resumen)]
-    lineas += [f"| **Total** | | **{resumen.mean_cost:.4f}** |", "", "## Latencia por paso (s)", ""]
+    lineas += [
+        f"| **Total** | | **{resumen.mean_cost:.4f}** |",
+        "",
+        f"Origen del coste: **{resumen.real_cost_share:.0%} real** (informado por el proveedor, p.ej. "
+        f"`usage.cost` de OpenRouter) y el resto **estimado** con las tarifas indicadas.",
+        "",
+        "## Latencia por paso (s)",
+        "",
+    ]
     lineas += ["| Paso | Modelo | Media | Máx. | Fallos |", "|---|---|---|---|---|"]
     lineas += [
         f"| {s.step} | {s.model} | {s.mean_seconds:.2f} | {s.max_seconds:.2f} | {s.runs_failed} |"

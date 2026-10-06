@@ -87,3 +87,29 @@ def test_tope_invalido() -> None:
 
     with pytest.raises(ValueError):
         AnalysisCache(max_entries=0)
+
+
+def test_la_clave_cambia_con_los_modelos_y_backends() -> None:
+    from finlens.providers.base import ProviderInfo
+
+    a = (ProviderInfo("llm", "openrouter", "m1"),)
+    b = (ProviderInfo("llm", "openrouter", "m2"),)
+    c = (ProviderInfo("llm", "anthropic", "m1"),)
+    claves = {cache_key(BASE, demo=False, max_pdf_chars=10, providers_info=i) for i in (a, b, c, ())}
+    assert len(claves) == 4
+
+
+def test_la_cache_es_segura_entre_hilos() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    cache = AnalysisCache(max_entries=8)
+
+    def usar(i: int) -> None:
+        for j in range(50):
+            cache.put_analysis(f"k{(i * 7 + j) % 20}", j)  # type: ignore[arg-type]
+            cache.get_analysis(f"k{j % 20}")
+            cache.put_media(f"k{j % 20}", j)  # type: ignore[arg-type]
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        list(pool.map(usar, range(6)))
+    assert len(cache._analisis) <= 8 and len(cache._medios) <= 32

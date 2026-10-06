@@ -4,8 +4,8 @@ from datetime import date
 
 import numpy as np
 import pytest
-from _mercado import cargar, cliente, serie_de_cierres
 
+from _mercado import cargar, cliente, serie_de_cierres
 from finlens.domain import technicals as T
 from finlens.sources.yahoo import YahooPrices
 

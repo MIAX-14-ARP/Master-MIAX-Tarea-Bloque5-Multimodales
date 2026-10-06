@@ -27,8 +27,8 @@ from finlens.orchestration.pipeline import (  # noqa: E402
 from finlens.orchestration.trace import TraceStep, total_cost  # noqa: E402
 from finlens.providers.base import Message, ProviderError, Providers  # noqa: E402
 from finlens.providers.registry import build_mock_providers, build_providers  # noqa: E402
-from finlens.ui import components as ui  # noqa: E402
 from finlens.ui import brain, pipeline_map, theme, views  # noqa: E402
+from finlens.ui import components as ui  # noqa: E402
 from finlens.ui.demo_samples import (  # noqa: E402
     DEMO_QUESTION,
     demo_audio_wav,

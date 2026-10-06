@@ -5,8 +5,8 @@ from typing import Any
 
 import httpx2 as httpx
 import pytest
-from _mercado import cargar, cliente
 
+from _mercado import cargar, cliente
 from finlens.sources.base import DerivativesSource, PriceSource, SourceError
 from finlens.sources.hyperliquid import HyperliquidSource
 

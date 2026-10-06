@@ -74,7 +74,7 @@ def _construir(settings: Settings, capability: str, backend: str) -> tuple[Any, 
 
         clave = settings.openrouter_api_key.get_secret_value().strip()
         s = settings
-        razonamiento = {
+        razonamiento: dict[str, Any] = {
             "reasoning_effort": s.openrouter_reasoning_effort,
             "min_output_tokens": s.openrouter_min_output_tokens,
         }

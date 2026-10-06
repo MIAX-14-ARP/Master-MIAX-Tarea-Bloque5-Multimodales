@@ -28,7 +28,7 @@ THREE_URL = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
 FONTS_URL = "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap"
 PLAYBACK_S = 7.0  # la ejecución real se reescala a esta duración de reproducción
 HEIGHT = 470
-_JS = (Path(__file__).parent / "static" / "brain.js").read_text(encoding="utf-8")
+_JS_PATH = Path(__file__).parent / "static" / "brain.js"
 
 INPUTS = (
     ("in_pdf", "pdf", "Informe PDF"), ("in_chart", "chart", "Gráfico"), ("in_audio", "audio", "Audio"),
@@ -66,8 +66,9 @@ def _schedule(steps: Sequence[TraceStep]) -> dict[str, tuple[float, float]]:
     total = sum(s.seconds for s in steps) or 1.0
     minimo = max(total * 0.05, 1e-3)
     inicios = [getattr(s, "started_s", None) for s in steps]
-    if all(isinstance(x, int | float) for x in inicios):
-        barras = [(s.step, float(x), float(x) + max(s.seconds, minimo)) for s, x in zip(steps, inicios, strict=True)]
+    reales = [float(x) for x in inicios if isinstance(x, int | float)]
+    if len(reales) == len(steps):
+        barras = [(s.step, x, x + max(s.seconds, minimo)) for s, x in zip(steps, reales, strict=True)]
     else:
         ajustados = [dataclasses.replace(s, seconds=max(s.seconds, minimo)) for s in steps]
         barras = [(b.step, b.start, b.end) for b in timeline(ajustados)]
@@ -216,12 +217,13 @@ html,body{{margin:0;height:100%;background:#0c1416;overflow:hidden;font-family:'
 <div id="bar"></div>
 <script type="application/json" id="fl-data">{datos}</script>
 <script>window.FL_THREE_URL = {json.dumps(THREE_URL)};</script>
-<script>{_JS}</script>
+<script>{_JS_PATH.read_text(encoding="utf-8")}</script>
 </body></html>"""
 
 
 def render(data: dict[str, Any]) -> None:
     """Pinta el cerebro (iframe). Mismos datos → Streamlit no recrea el iframe."""
-    import streamlit.components.v1 as components
+    import streamlit as st
 
-    components.html(brain_html(data), height=HEIGHT)
+    # HTML propio (plantilla fija + JSON escapado); ningún texto de LLM entra en la escena.
+    st.iframe(brain_html(data), height=HEIGHT)

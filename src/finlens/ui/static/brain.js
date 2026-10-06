@@ -147,19 +147,30 @@
   // ---------- Cámara (misma para 3D y 2D) ----------
   var span = (L - 1) * GAP;
   function shot(t, wall, aspect) {
-    var far = Math.min(2.2, Math.max(1, 1.25 / aspect));
+    var far = Math.min(2.6, Math.max(1, 1.9 / aspect));
     var pos3, at;
     var fx = REPLAY && replaying && t < DUR ? focusX(t) : null;
+    if (aspect < 0.9 && !reduced) {
+      // Vertical (móvil): travelling continuo capa a capa, como la cámara del reel.
+      var x = fx !== null ? fx : tourX(wall);
+      return { p: [x - 1.6, 1.3, 11.5], at: [x + 1.1, -0.25, 0] };
+    }
     if (fx !== null) {
       pos3 = [fx - 4.6, 1.5, 8.6]; at = [fx + 1.4, -0.15, 0];
     } else if (!REPLAY && !reduced) {
-      var d = Math.sin(wall * 0.07) * span * 0.32;
-      pos3 = [d - 3.2, 2.6, 13.2]; at = [d * 0.6 + 0.8, -0.3, 0];
+      var d = Math.sin(wall * 0.06) * span * 0.12;
+      pos3 = [d - 2.2, 2.2, 15.4]; at = [d * 0.5 - 0.15, -0.35, 0];
     } else {
-      pos3 = [-3.4, 3.2, 14.8]; at = [0.9, -0.35, 0];
+      pos3 = [-2.2, 2.3, 15.6]; at = [-0.15, -0.35, 0];
     }
     for (var i = 0; i < 3; i++) pos3[i] = at[i] + (pos3[i] - at[i]) * far;
     return { p: pos3, at: at };
+  }
+  function tourX(wall) {
+    var k = (wall / 3.4) % L, i = Math.floor(k), f = k - i, e = f < 0.6 ? 0 : (f - 0.6) / 0.4;
+    e = e * e * (3 - 2 * e);
+    var a = DATA.layers[i].x, b = DATA.layers[(i + 1) % L].x;
+    return i === L - 1 ? a + (b - a) * e : a + (b - a) * e;
   }
   var cam = null;
   function smoothCam(target, dt) {
@@ -217,7 +228,7 @@
       plate.rotation.y = Math.PI / 2; plate.position.set(l.x, 0, 0); scene.add(plate);
       var rim = new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: 0x58aeb9, transparent: true, opacity: 0.5 }));
       rim.rotation.y = Math.PI / 2; rim.position.set(l.x, 0, 0); scene.add(rim);
-      var hdr = sprite(labelCanvas(headerLines(l)), 0.42);
+      var hdr = sprite(labelCanvas(headerLines(l)), 0.5);
       hdr.position.set(l.x, l.h / 2 + 0.38, 0); scene.add(hdr);
     });
 
@@ -258,7 +269,7 @@
       core.position.fromArray(pos[n.id]); scene.add(core);
       var halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
       halo.position.copy(core.position); scene.add(halo);
-      var lab = sprite(labelCanvas(nodeLines(n), { shadow: true }), compact() ? 0.24 : 0.36);
+      var lab = sprite(labelCanvas(nodeLines(n), { shadow: true }), compact() ? 0.3 : 0.42);
       lab.center.set(-0.08, 0.5);
       lab.position.copy(core.position); scene.add(lab);
       return { n: n, core: core, halo: halo, lab: lab };
@@ -361,7 +372,7 @@
         var v = look(n, t, wall), r = Math.max(2, 0.075 * p[2] * v.k);
         g.fillStyle = rgba(v.c, v.a * 0.25); g.beginPath(); g.arc(p[0], p[1], r * 2.4, 0, 7); g.fill();
         g.fillStyle = rgba(v.c, v.a); g.beginPath(); g.arc(p[0], p[1], r, 0, 7); g.fill();
-        var lc = labels[n.id], lh = (compact() ? 0.24 : 0.36) * p[2], lw = lh * lc.width / lc.height;
+        var lc = labels[n.id], lh = (compact() ? 0.3 : 0.42) * p[2], lw = lh * lc.width / lc.height;
         g.globalAlpha = v.la; g.drawImage(lc, p[0] + lw * 0.08, p[1] - lh / 2, lw, lh); g.globalAlpha = 1;
       });
       hud(t);

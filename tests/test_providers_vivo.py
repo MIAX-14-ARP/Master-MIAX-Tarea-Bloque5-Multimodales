@@ -126,3 +126,13 @@ def test_imagen_se_genera(providers: Providers) -> None:
     )
     medir("Imagen", inicio, f"({len(imagen.image)} bytes, mime {imagen.mime})")
     assert imagen.image[:4] == b"\x89PNG" or imagen.image[:3] == b"\xff\xd8\xff" or imagen.image[:4] == b"RIFF"
+
+
+def test_embeddings_multilingues(providers: Providers) -> None:
+    real("embeddings")
+    inicio = time.perf_counter()
+    r = providers.embeddings.embed(["Net sales grew 3.2%", "Las ventas netas crecieron un 3,2%", "Receta de paella"])
+    medir("Embeddings", inicio, f"({len(r.vectors[0])} dims, {r.tokens} tok, cost={r.cost_usd})")
+    a, b, c = r.vectors
+    punto = lambda u, v: sum(x * y for x, y in zip(u, v, strict=True))  # noqa: E731
+    assert punto(a, b) > punto(a, c)

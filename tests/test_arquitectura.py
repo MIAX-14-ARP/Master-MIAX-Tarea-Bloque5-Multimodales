@@ -3,7 +3,8 @@ import ast
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[1] / "src" / "finlens"
-SDK = {"anthropic", "openai", "httpx", "httpx2"}
+SDK_IA = {"anthropic", "openai"}
+HTTP = {"httpx", "httpx2"}  # cliente HTTP: solo providers/ y sources/
 
 
 def importaciones(ruta: Path) -> set[str]:
@@ -28,7 +29,42 @@ def test_ningun_sdk_fuera_de_providers() -> None:
         f"{f.relative_to(RAIZ)} importa {m}"
         for f in todos
         for m in importaciones(f)
-        if m.split(".")[0] in SDK
+        if m.split(".")[0] in SDK_IA
+    ]
+    assert not infractores, infractores
+
+
+def test_cliente_http_solo_en_providers_y_sources() -> None:
+    permitidas = {"providers", "sources"}
+    infractores = [
+        f"{f.relative_to(RAIZ)} importa {m}"
+        for f in RAIZ.rglob("*.py")
+        if f.relative_to(RAIZ).parts[0] not in permitidas
+        for m in importaciones(f)
+        if m.split(".")[0] in HTTP
+    ]
+    assert not infractores, infractores
+
+
+def test_sources_no_usa_sdk_de_ia_ni_providers_ni_negocio() -> None:
+    infractores = []
+    for f in ficheros("sources"):
+        for m in importaciones(f):
+            raiz = m.split(".")[0]
+            if raiz in SDK_IA or m.startswith(("finlens.providers", "finlens.domain", "finlens.orchestration", "finlens.ui")):
+                infractores.append(f"{f.relative_to(RAIZ)} importa {m}")
+            if raiz == "streamlit":
+                infractores.append(f"{f.relative_to(RAIZ)} importa {m}")
+    assert not infractores, infractores
+
+
+def test_negocio_solo_conoce_el_contrato_de_sources() -> None:
+    """domain/ y orchestration/ pueden usar `finlens.sources.base` (contrato), nunca los conectores."""
+    infractores = [
+        f"{f.relative_to(RAIZ)} importa {m}"
+        for f in ficheros("domain")
+        for m in importaciones(f)
+        if m.startswith("finlens.sources") and m != "finlens.sources.base"
     ]
     assert not infractores, infractores
 

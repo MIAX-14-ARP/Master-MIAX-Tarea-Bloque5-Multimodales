@@ -53,7 +53,7 @@ def test_flujo_completo_en_modo_demo() -> None:
     assert resultado.chart is not None and resultado.transcript == TRANSCRIPCION_DEMO
     assert resultado.document.n_pages == 4
     assert list(pasos(resultado.trace)) == [
-        "Ingesta e índice", "Lectura del gráfico", "Transcripción de audio",
+        "Ingesta e índice", "Índice semántico (embeddings)", "Lectura del gráfico", "Transcripción de audio",
         "Recuperación", "Análisis (LLM)", "Guardrails de compliance", "Verificación de cifras",
     ]
     assert all(s.ok for s in resultado.trace)

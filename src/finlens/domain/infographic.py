@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import contextlib
 import io
-import threading
 import re
 import textwrap
-from dataclasses import dataclass
+import threading
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -188,7 +188,7 @@ def _compose(
 
     # Tarjetas de cifras verificadas.
     y = ALTO_CABECERA + 50
-    ax.text(MARGEN, y, "CIFRAS CLAVE VERIFICADAS EN EL DOCUMENTO", color=COLOR_ACENTO,
+    ax.text(MARGEN, y, ENCABEZADO_CIFRAS, color=COLOR_ACENTO,
             fontsize=PT_ETIQUETA, fontweight="bold", va="center", **base)
     y += 40
     ancho_t = (ANCHO - 2 * MARGEN - (COLUMNAS - 1) * TARJETA_HUECO) / COLUMNAS
@@ -207,13 +207,13 @@ def _compose(
         detalle = " · ".join(p for p in (cifra.period, f"p.{pagina}" if pagina else "") if p)
         ax.text(x + 30, yt + 156, detalle, color=COLOR_TEXTO_SUAVE, fontsize=PT_ETIQUETA - 1, va="center", **base)
     if not tarjetas:
-        ax.text(MARGEN, y + 30, "No hay cifras del documento que se hayan podido verificar.",
+        ax.text(MARGEN, y + 30, TEXTO_SIN_CIFRAS,
                 color=COLOR_TEXTO_SUAVE, fontsize=PT_SUBTITULO, va="center", **base)
     y = y_fin
 
     # Tendencia del gráfico.
     if chart is not None:
-        ax.text(MARGEN, y, "TENDENCIA DEL GRÁFICO", color=COLOR_ACENTO, fontsize=PT_ETIQUETA,
+        ax.text(MARGEN, y, ENCABEZADO_TENDENCIA, color=COLOR_ACENTO, fontsize=PT_ETIQUETA,
                 fontweight="bold", va="center", **base)
         y += 34
         color = _flecha(ax, chart.trend, MARGEN, y, 34)

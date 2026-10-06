@@ -102,10 +102,10 @@ a {{ color: var(--brass); }}
 
 /* ---------- Barra de proveedores ---------- */
 .fl-prov {{ display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); border:1px solid var(--rule);
-  min-width:min(520px,100%); flex:0 1 600px; }}
+  min-width:min(520px,100%); flex:0 1 660px; }}
 .fl-prov__cell {{ padding:var(--s2) 10px; border-left:1px solid var(--rule); min-width:0; }}
 .fl-prov__cell:first-child {{ border-left:0; }}
-.fl-prov__cap {{ font:600 10px/1 var(--f-mono); letter-spacing:.14em; color:var(--muted); display:flex;
+.fl-prov__cap {{ font:600 10px/1 var(--f-mono); letter-spacing:.06em; white-space:nowrap; color:var(--muted); display:flex;
   justify-content:space-between; gap:4px; }}
 .fl-prov__be {{ font:500 12px/1.5 var(--f-mono); color:var(--paper); margin-top:6px; }}
 .fl-prov__model {{ font:400 11px/1.3 var(--f-mono); color:var(--paper-dim); white-space:nowrap;

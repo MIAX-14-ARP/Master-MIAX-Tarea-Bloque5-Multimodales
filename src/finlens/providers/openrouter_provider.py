@@ -87,7 +87,7 @@ def make_client(api_key: str, client: Any = None, max_retries: int | None = None
     """
     if client is not None:
         return client
-    extra = {} if max_retries is None else {"max_retries": max_retries}
+    extra: dict[str, Any] = {} if max_retries is None else {"max_retries": max_retries}
     return openai.OpenAI(
         api_key=api_key, base_url=BASE_URL, timeout=TIMEOUT_S, default_headers=ATTRIBUTION_HEADERS, **extra
     )

@@ -144,8 +144,9 @@ modo demo y la app lo indica; con `DEMO_MODE=true` todo es simulado.
 |---|---|
 | `DEMO_MODE` | `true` fuerza el modo demo |
 | `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | Claves de los proveedores |
-| `LLM_PROVIDER`, `VISION_PROVIDER`, `STT_PROVIDER`, `TTS_PROVIDER`, `IMAGE_PROVIDER` | `auto` (por defecto), `openrouter`, `anthropic`, `openai` o `mock` |
-| `OPENROUTER_LLM_MODEL`, `OPENROUTER_VISION_MODEL`, `OPENROUTER_STT_MODEL`, `OPENROUTER_TTS_MODEL`, `OPENROUTER_TTS_VOICE`, `OPENROUTER_IMAGE_MODEL` | Modelos de OpenRouter (slugs de su catálogo) |
+| `LLM_PROVIDER`, `VISION_PROVIDER`, `STT_PROVIDER`, `TTS_PROVIDER`, `IMAGE_PROVIDER`, `EMBEDDINGS_PROVIDER` | `auto` (por defecto), `openrouter`, `anthropic`, `openai` o `mock` |
+| `OPENROUTER_LLM_MODEL`, `OPENROUTER_VISION_MODEL`, `OPENROUTER_STT_MODEL`, `OPENROUTER_TTS_MODEL`, `OPENROUTER_TTS_VOICE`, `OPENROUTER_IMAGE_MODEL`, `OPENROUTER_EMBEDDINGS_MODEL`, `OPENROUTER_STT_FALLBACK_MODEL` | Modelos de OpenRouter (slugs de su catálogo); embeddings `baai/bge-m3` para preguntar en español sobre informes en inglés |
+| `OPENROUTER_REASONING_EFFORT`, `OPENROUTER_MIN_OUTPUT_TOKENS`, `STT_LANGUAGE` | Esfuerzo de razonamiento y mínimo de `max_tokens` en OpenRouter; idioma de la transcripción (vacío = autodetección) |
 | `LLM_MODEL`, `VISION_MODEL`, `STT_MODEL`, `TTS_MODEL`, `TTS_VOICE`, `IMAGE_MODEL` | Modelos (verificar en la documentación oficial) |
 | `LLM_EFFORT` | Profundidad de razonamiento del LLM (`low`…`max`; vacío = no enviarlo) |
 | `LLM_MIN_OUTPUT_TOKENS` | Mínimo de `max_tokens` solo para Anthropic nativo (el pensamiento comparte presupuesto con la respuesta) |

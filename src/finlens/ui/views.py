@@ -170,12 +170,14 @@ def show_trace(steps: Sequence[TraceStep], total_seconds: float) -> None:
 
 # --- Mercado (spec 06 §10). Tolerante: los nombres internos de MarketContext se comprueban con getattr.
 
-_NOMBRES_TECNICOS = {
-    "sma20": "SMA 20", "sma50": "SMA 50", "ema20": "EMA 20", "rsi14": "RSI 14", "rsi": "RSI",
-    "volatility": "Volatilidad anual.", "volatility_annualized": "Volatilidad anual.", "max_drawdown": "Máx. drawdown",
-    "period_return": "Rentabilidad periodo", "trend": "Tendencia", "last_close": "Último cierre",
-    "period_low": "Mínimo periodo", "period_high": "Máximo periodo", "supports": "Soportes", "resistances": "Resistencias",
-}
+# Campos de `domain.technicals.TechnicalSummary` (spec 06 §10.2): (campo, etiqueta, formato).
+_TECNICOS = (
+    ("last_close", "Último cierre", "num"), ("period_return", "Rentabilidad periodo", "pct"),
+    ("trend", "Tendencia", "txt"), ("sma20", "SMA 20", "num"), ("sma50", "SMA 50", "num"), ("ema20", "EMA 20", "num"),
+    ("rsi14", "RSI 14", "num"), ("volatility_annual", "Volatilidad anual.", "pct"),
+    ("max_drawdown", "Máx. drawdown", "pct"), ("range_low", "Mínimo periodo", "num"),
+    ("range_high", "Máximo periodo", "num"), ("supports", "Soportes", "num"), ("resistances", "Resistencias", "num"),
+)
 _DERIVADOS = (
     ("funding_annualized", "Funding anualizado", "pct"), ("funding_hourly", "Funding horario", "pct4"),
     ("open_interest", "Open interest", "num"), ("mark_px", "Mark", "num"), ("oracle_px", "Oráculo", "num"),
@@ -201,7 +203,7 @@ def _fmt(valor: Any, modo: str = "num") -> str:
             return f"{valor:.4%}"
         return f"{valor:,.2f}" if abs(valor) < 1e6 else f"{valor:,.0f}"
     if isinstance(valor, list | tuple):
-        return " · ".join(_fmt(v) for v in valor[:3]) or "—"
+        return " · ".join(_fmt(v, modo) for v in valor[:3]) or "—"
     return str(valor)
 
 
@@ -242,19 +244,22 @@ def show_market(market: Any) -> None:
             html('<p class="fl-empty">Sin contraste: no hubo lectura del gráfico.</p>')
     tecnicos = _pick(market, "technicals", "technical_summary", "tech")
     if tecnicos is not None:
-        pares = [(_NOMBRES_TECNICOS.get(k, k.replace("_", " ")), _fmt(v)) for k, v in _campos(tecnicos)]
+        pares = [(etq, _fmt(getattr(tecnicos, k), modo)) for k, etq, modo in _TECNICOS if hasattr(tecnicos, k)]
+        if not pares:  # versión distinta del contrato: se muestran sus campos tal cual
+            pares = [(k.replace("_", " "), _fmt(v)) for k, v in _campos(tecnicos)]
         html(ui.subhead("§M3", "Indicadores técnicos (calculados en Python)") + ui.kv_grid(pares))
     derivados = _pick(market, "derivatives")
     if derivados is not None:
         pares = [(etq, _fmt(getattr(derivados, k, None), modo)) for k, etq, modo in _DERIVADOS]
         html(ui.subhead("§M4", "Derivados cripto · Hyperliquid") + ui.kv_grid(pares))
     fundamentales = _pick(market, "fundamentals")
-    if fundamentales is not None and getattr(fundamentales, "facts", ()):
+    hechos: tuple[Any, ...] = tuple(getattr(fundamentales, "facts", None) or ())
+    if hechos:
         html(ui.subhead("§M5", f"Fundamentales oficiales SEC · {getattr(fundamentales, 'company', '')}"))
         st.table([
             {"Concepto": getattr(f, "label_es", "") or getattr(f, "tag", ""), "Ejercicio": str(getattr(f, "fy", "")),
              "Valor": _fmt(getattr(f, "value", None)), "Unidad": getattr(f, "unit", ""),
              "Cierre": str(getattr(f, "end", "")), "Formulario": getattr(f, "form", "")}
-            for f in fundamentales.facts
+            for f in hechos
         ])
     show_disclaimer()

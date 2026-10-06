@@ -101,6 +101,9 @@ def probar_robustez(providers: Providers, tariffs: Tariffs, carpeta: Path) -> No
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):  # Windows: la consola cp1252 no admite ✓/✗
+        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+        sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--casos", type=Path, default=Path("samples"), help="carpeta con los casos")
     ap.add_argument("-n", "--repeticiones", type=int, default=1, help="repeticiones por caso")
@@ -115,7 +118,12 @@ def main() -> int:
     providers = build_mock_providers() if args.demo else build_providers(settings)
     demo = providers.is_demo
     if demo and not args.demo:
-        print(f"Modo demo automático: {settings.demo_reason}")
+        print(f"Modo demo automático: {settings.demo_reason or 'todas las capacidades están simuladas.'}")
+    elif providers.mock_capabilities:
+        print(
+            "AVISO: capacidades SIMULADAS (sus cifras de coste y latencia no son reales): "
+            + ", ".join(providers.mock_capabilities)
+        )
     for aviso in providers.warnings:
         print(f"Aviso: {aviso}")
     if not demo:

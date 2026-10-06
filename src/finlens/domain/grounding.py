@@ -139,7 +139,10 @@ def _nums_del_texto(text: str, *, split_spaces: bool) -> list[tuple[str, list[_N
         if escala_m and escala_m.group("w") in ("M", "B"):
             exp = 6 if escala_m.group("w") == "M" else 9
         fin = m.end() + (escala_m.end() if escala_m else 0)
-        porcentaje = bool(_PORCENTAJE.match(resto))
+        pct = _PORCENTAJE.match(resto)
+        porcentaje = pct is not None
+        if pct and not escala_m:
+            fin = m.end() + pct.end()
         inicio = m.start()
         if inicio > 0 and text[inicio - 1] in "€$£":
             inicio -= 1

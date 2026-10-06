@@ -54,7 +54,7 @@ class ChartCheck:
 _NUMERO = re.compile(r"(?<![\w.,])(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)(\s?[kK]\b)?(\s?%)?")
 _ANTES_NO_PRECIO = re.compile(r"(?:SMA|EMA|RSI|MA|MM|MACD|media(?:s)?(?:\s+móvil(?:es)?)?|per[ií]odo)\s*$", re.IGNORECASE)
 _DESPUES_NO_PRECIO = re.compile(
-    r"\s*(?:d[ií]as?|velas?|sesiones?|semanas?|meses|mes|horas?|a[ñn]os?|veces|x\b|"
+    r"\s*(?:de\s+)?(?:d[ií]as?|velas?|sesiones?|semanas?|meses|mes|horas?|a[ñn]os?|veces|x\b|"
     r"ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)",
     re.IGNORECASE,
 )

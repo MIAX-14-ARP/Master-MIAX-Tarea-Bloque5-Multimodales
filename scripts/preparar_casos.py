@@ -19,7 +19,7 @@ import json
 import os
 import sys
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -86,8 +86,8 @@ def paso_pdf(args) -> None:
 
 
 def descargar_precios(ticker: str, desde: str, hasta: str) -> list[dict]:
-    d = int(datetime.fromisoformat(desde).replace(tzinfo=timezone.utc).timestamp())
-    h = int(datetime.fromisoformat(hasta).replace(tzinfo=timezone.utc).timestamp()) + 86400
+    d = int(datetime.fromisoformat(desde).replace(tzinfo=UTC).timestamp())
+    h = int(datetime.fromisoformat(hasta).replace(tzinfo=UTC).timestamp()) + 86400
     url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
            f"?period1={d}&period2={h}&interval=1d&events=history")
     with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=60) as r:
@@ -98,7 +98,7 @@ def descargar_precios(ticker: str, desde: str, hasta: str) -> list[dict]:
     for i, ts in enumerate(res["timestamp"]):
         if None in (q["open"][i], q["high"][i], q["low"][i], q["close"][i]):
             continue
-        filas.append({"fecha": datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d"),
+        filas.append({"fecha": datetime.fromtimestamp(ts, UTC).strftime("%Y-%m-%d"),
                       "open": round(q["open"][i], 4), "high": round(q["high"][i], 4),
                       "low": round(q["low"][i], 4), "close": round(q["close"][i], 4),
                       "volume": q["volume"][i] or 0})
@@ -131,7 +131,7 @@ def paso_grafico(args) -> None:
         fig, (ax, axv) = plt.subplots(2, 1, figsize=(14, 9), dpi=100, sharex=True,
                                       gridspec_kw={"height_ratios": [4, 1], "hspace": 0.05})
         sube, baja = "#2e7d32", "#c62828"
-        for xi, f in zip(x, filas):
+        for xi, f in zip(x, filas, strict=True):
             c = sube if f["close"] >= f["open"] else baja
             ax.vlines(xi, f["low"], f["high"], color=c, linewidth=1)
             ax.bar(xi, abs(f["close"] - f["open"]) or 0.02, bottom=min(f["open"], f["close"]),

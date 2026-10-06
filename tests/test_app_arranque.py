@@ -25,4 +25,4 @@ def test_app_arranca_en_modo_demo() -> None:
     html = "\n".join(m.value for m in at.markdown)
     assert 'class="fl-brand"' in html and "Fin<em>Lens</em>" in html  # mancheta
     assert "Modo demo" in html  # honestidad: se avisa de que todo es simulado
-    assert html.count("fl-prov__cell is-mock") == 5  # las cinco capacidades, simuladas
+    assert html.count('class="fl-prov__cell') == html.count("fl-prov__cell is-mock") >= 5  # todas, simuladas

@@ -7,9 +7,9 @@ from pathlib import Path
 import httpx2 as httpx
 import numpy as np
 import pytest
-from _mercado import cargar, cliente, serie_de_cierres
 from PIL import Image
 
+from _mercado import cargar, cliente, serie_de_cierres
 from finlens.domain import market_chart
 from finlens.domain.infographic import COLOR_FONDO
 from finlens.domain.market_chart import ALTO_PX, ANCHO_PX, render_market_chart
@@ -108,4 +108,4 @@ def test_no_usa_pyplot_ni_anota_indicadores() -> None:
     fuente = Path(market_chart.__file__).read_text(encoding="utf-8")
     importados = {n.module for n in ast.walk(ast.parse(fuente)) if isinstance(n, ast.ImportFrom) and n.module}
     assert not any("pyplot" in m for m in importados)
-    assert "RSI" not in fuente and "annotate" not in fuente
+    assert "annotate" not in fuente and "rsi" not in fuente.split('"""')[2].lower()

@@ -108,13 +108,15 @@ def render_market_chart(serie: PriceSeries) -> bytes:
         media = sma(cierre, periodo)
         if not np.all(np.isnan(media)):
             ax_p.plot(x, media, color=color, linewidth=GROSOR_SMA, label=f"SMA {periodo}", zorder=4)
-    margen = (h.max() - low.min()) * 0.05
+    amplitud = float(h.max() - low.min()) or float(h.max()) * 0.02 or 1.0  # serie plana: evita ylim singular
+    margen = amplitud * 0.05
     ax_p.set_ylim(low.min() - margen, h.max() + margen)
     ax_p.set_xlim(-1, n)
     ax_p.yaxis.set_major_formatter(FuncFormatter(_formato_precio))
-    leyenda = ax_p.legend(loc="upper left", frameon=False, fontsize=PT_LEYENDA, labelcolor=COLOR_TEXTO_SUAVE)
-    for texto in leyenda.get_texts():
-        texto.set_fontfamily(FUENTE)
+    if ax_p.get_legend_handles_labels()[0]:  # sin velas suficientes no hay medias que rotular
+        leyenda = ax_p.legend(loc="upper left", frameon=False, fontsize=PT_LEYENDA, labelcolor=COLOR_TEXTO_SUAVE)
+        for texto in leyenda.get_texts():
+            texto.set_fontfamily(FUENTE)
 
     ax_v.bar(x, vol, width=ANCHO_VELA, color=list(colores), alpha=OPACIDAD_VOLUMEN, zorder=2)
     ax_v.yaxis.set_major_formatter(FuncFormatter(_formato_volumen))

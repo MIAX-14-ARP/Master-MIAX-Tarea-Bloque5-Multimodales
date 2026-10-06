@@ -3,8 +3,8 @@ import copy
 
 import httpx2 as httpx
 import pytest
-from _mercado import cargar, cliente
 
+from _mercado import cargar, cliente
 from finlens.sources.base import PriceSource, SourceError
 from finlens.sources.yahoo import YahooPrices
 

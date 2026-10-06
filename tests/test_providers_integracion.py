@@ -44,6 +44,7 @@ class OpenAIFalso:
             ),
             speech=SimpleNamespace(create=lambda **kw: SimpleNamespace(content=b"mp3")),
         )
+        self.embeddings = SimpleNamespace(create=self._embeddings)
         self.images = SimpleNamespace(
             generate=lambda **kw: SimpleNamespace(
                 data=[SimpleNamespace(b64_json=base64.b64encode(b"\x89PNG").decode())]
@@ -51,18 +52,27 @@ class OpenAIFalso:
         )
 
 
-def proveedores_reales_falsos():
+    @staticmethod
+    def _embeddings(**kw):
+        datos = [SimpleNamespace(index=i, embedding=[1.0, float(i % 3), 0.5]) for i, _ in enumerate(kw["input"])]
+        return SimpleNamespace(data=datos, usage=SimpleNamespace(prompt_tokens=10))
+
+
+def proveedores_reales_falsos(monkeypatch=None):
+    if monkeypatch is not None:
+        for nombre in ("OPENROUTER_API_KEY", "DEMO_MODE"):
+            monkeypatch.delenv(nombre, raising=False)
     anthropic_falso, openai_falso = AnthropicFalso(), OpenAIFalso()
     providers = build_real_providers(Settings(_env_file=None, anthropic_api_key="k", openai_api_key="k"))
     for objeto in (providers.llm, providers.vision):
         objeto._client = anthropic_falso
-    for objeto in (providers.stt, providers.tts, providers.image):
+    for objeto in (providers.stt, providers.tts, providers.image, providers.embeddings):
         objeto._client = openai_falso
     return providers, anthropic_falso
 
 
-def test_flujo_completo_con_las_clases_reales() -> None:
-    providers, anthropic_falso = proveedores_reales_falsos()
+def test_flujo_completo_con_las_clases_reales(monkeypatch) -> None:
+    providers, anthropic_falso = proveedores_reales_falsos(monkeypatch)
     tarifas = Tariffs(2.0, 10.0, 0.006, 15.0, 0.04)
     entrada = AnalysisInput(
         pdf=demo_pdf(), question="¿margen?", chart=demo_chart_png(), audio=demo_audio_wav()

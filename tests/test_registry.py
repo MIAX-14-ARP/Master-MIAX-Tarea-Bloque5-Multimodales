@@ -9,7 +9,7 @@ from finlens.providers.mock import MockImage, MockLLM, MockSTT, MockTTS, MockVis
 from finlens.providers.openai_provider import OpenAIImage, OpenAISTT, OpenAITTS
 from finlens.providers.registry import build_mock_providers, build_providers, resolve_backend
 
-CAPACIDADES = ("llm", "vision", "stt", "tts", "image")
+CAPACIDADES = ("llm", "vision", "stt", "tts", "image", "embeddings")
 ENTORNO = (
     "DEMO_MODE", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY",
     *(f"{c.upper()}_PROVIDER" for c in CAPACIDADES), "LLM_MIN_OUTPUT_TOKENS",
@@ -37,7 +37,7 @@ def test_sin_claves_todo_es_mock_y_demo() -> None:
     assert isinstance(p.llm, MockLLM) and isinstance(p.image, MockImage)
 
 
-def test_build_mock_providers_describe_las_cinco_capacidades() -> None:
+def test_build_mock_providers_describe_las_seis_capacidades() -> None:
     p = build_mock_providers()
     assert p.is_demo and p.mock_capabilities == CAPACIDADES
     assert p.info[0] == ProviderInfo("llm", "mock", "mock-llm")
@@ -55,7 +55,7 @@ def test_solo_openrouter_lo_usa_en_las_cinco_capacidades() -> None:
     assert modelos == {
         "llm": "anthropic/claude-sonnet-5.5", "vision": "google/gemini-3.8-flash",
         "stt": "openai/whisper-large-v3-turbo", "tts": "hexgrad/kokoro-82m",
-        "image": "black-forest-labs/flux.2-klein-4b",
+        "image": "black-forest-labs/flux.2-klein-4b", "embeddings": "baai/bge-m3",
     }
     assert p.tts._voice == "ef_dora"
 
@@ -69,6 +69,7 @@ def test_solo_claves_nativas_usan_anthropic_y_openai() -> None:
     p = build_providers(crear(anthropic_api_key="a", openai_api_key="o"))
     assert backends(p) == {
         "llm": "anthropic", "vision": "anthropic", "stt": "openai", "tts": "openai", "image": "openai",
+        "embeddings": "openai",
     }
     assert isinstance(p.llm, AnthropicLLM) and isinstance(p.vision, AnthropicVision)
     assert isinstance(p.stt, OpenAISTT) and isinstance(p.tts, OpenAITTS) and isinstance(p.image, OpenAIImage)
@@ -77,7 +78,7 @@ def test_solo_claves_nativas_usan_anthropic_y_openai() -> None:
 
 def test_solo_anthropic_deja_voz_e_imagen_en_mock() -> None:
     p = build_providers(crear(anthropic_api_key="a"))
-    assert p.mock_capabilities == ("stt", "tts", "image") and not p.is_demo
+    assert p.mock_capabilities == ("stt", "tts", "image", "embeddings") and not p.is_demo
     assert isinstance(p.llm, AnthropicLLM) and isinstance(p.stt, MockSTT) and isinstance(p.tts, MockTTS)
 
 
@@ -106,6 +107,7 @@ def test_provider_explicito_por_capacidad_mezcla_backends() -> None:
     p = build_providers(settings)
     assert backends(p) == {
         "llm": "anthropic", "vision": "openrouter", "stt": "openai", "tts": "mock", "image": "openrouter",
+        "embeddings": "openrouter",
     }
     assert p.mock_capabilities == ("tts",) and not p.is_demo and p.warnings == ()
 
@@ -166,3 +168,46 @@ def test_anthropic_nativo_recibe_el_minimo_de_tokens_configurado() -> None:
 def test_las_claves_no_se_filtran_en_info_ni_avisos() -> None:
     p = build_providers(crear(openrouter_api_key="secreto-xyz", llm_provider="anthropic"))
     assert "secreto-xyz" not in repr(p.info) + repr(p.warnings)
+
+
+def test_openrouter_recibe_razonamiento_minimo_de_tokens_stt_y_embeddings() -> None:
+    p = build_providers(crear(
+        openrouter_api_key="k", openrouter_reasoning_effort="medium", openrouter_min_output_tokens=5000,
+        stt_language="es", openrouter_stt_fallback_model="x/y", openrouter_embeddings_model="a/emb",
+    ))
+    for objeto in (p.llm, p.vision):
+        assert objeto._reasoning_effort == "medium" and objeto._min_output_tokens == 5000
+    assert p.stt._fallback == "x/y" and p.stt._language == "es"
+    assert isinstance(p.embeddings, orp.OpenRouterEmbeddings) and p.embeddings.model == "a/emb"
+
+
+def test_por_defecto_razonamiento_low_sin_idioma_forzado_y_respaldo_stt() -> None:
+    p = build_providers(crear(openrouter_api_key="k"))
+    assert p.llm._reasoning_effort == "low" and p.llm._min_output_tokens == 4000
+    assert p.stt._language == "" and p.stt._fallback == "openai/gpt-4o-mini-transcribe"
+
+
+def test_embeddings_provider_explicito_y_nativo() -> None:
+    from finlens.providers.openai_provider import OpenAIEmbeddings
+
+    p = build_providers(crear(openrouter_api_key="r", openai_api_key="o", embeddings_provider="openai"))
+    assert isinstance(p.embeddings, OpenAIEmbeddings) and p.embeddings.model == "text-embedding-3-small"
+    sin_clave = build_providers(crear(openrouter_api_key="r", embeddings_provider="openai"))
+    assert backends(sin_clave)["embeddings"] == "mock" and "OPENAI_API_KEY" in sin_clave.warnings[0]
+
+
+def test_tarifa_tts_segun_el_backend() -> None:
+    assert crear(openrouter_api_key="k").effective_price_tts_per_mchar == 0.62
+    assert crear(openai_api_key="k").effective_price_tts_per_mchar == 15.0
+    assert crear(openrouter_api_key="k", tts_provider="openai").effective_price_tts_per_mchar == 15.0
+
+
+def test_is_demo_es_robusto_sin_info() -> None:
+    from dataclasses import replace
+
+    mock = build_mock_providers()
+    assert replace(mock, info=()).is_demo and replace(mock, info=()).mock_capabilities == CAPACIDADES
+    real = build_providers(crear(openrouter_api_key="k"))
+    assert not replace(real, info=()).is_demo and replace(real, info=()).mock_capabilities == ()
+    parcial = replace(real, llm=mock.llm, info=())
+    assert parcial.mock_capabilities == ("llm",) and not parcial.is_demo
