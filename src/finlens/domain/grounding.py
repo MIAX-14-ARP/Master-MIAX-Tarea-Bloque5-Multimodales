@@ -22,6 +22,8 @@ from typing import Literal
 
 from finlens.domain.ingest import IngestedDocument
 from finlens.domain.schemas import AnalysisReport, Citation
+from finlens.domain.technicals import TechnicalSummary
+from finlens.sources.base import DerivativesSnapshot, Fundamentals
 
 Status = Literal["verificada", "no_encontrada", "sin_fuente_documental"]
 
@@ -46,6 +48,8 @@ _ESCALAS = {
     "miles": 3, "thousand": 3, "thousands": 3, "mil": 3, "k": 3,
 }
 _PORCENTAJE = re.compile(rf"^{_WS}*(?:%|por\s+ciento|percent|pp\b)", re.IGNORECASE)
+_BPS = re.compile(rf"^{_WS}*(?:bps?\b|basis\s+points?|puntos\s+b[aá]sicos)", re.IGNORECASE)
+MIN_DIGITOS_SIN_ESCALA = 3  # un número suelto de 1-2 cifras no puede «ser» una cifra escalada (p.ej. 2 ≠ 2 bn)
 _K_ESCALA = (3, -3, 6, -6, 9, -9)
 
 
@@ -70,9 +74,14 @@ class _Num:
     valor: Decimal  # efectivo, con la escala aplicada
     unidad: Decimal  # precisión del último dígito (con escala)
     escalado: bool  # lleva palabra de escala
-    porcentaje: bool
+    unidad_txt: str  # «%», «bps» o «» (unidad pegada al número)
+    digitos: int  # cifras del token (sin separadores)
     inicio: int
     fin: int
+
+    @property
+    def porcentaje(self) -> bool:
+        return self.unidad_txt == "%"
 
 
 def _canonico(texto: str) -> str | None:
@@ -139,10 +148,10 @@ def _nums_del_texto(text: str, *, split_spaces: bool) -> list[tuple[str, list[_N
         if escala_m and escala_m.group("w") in ("M", "B"):
             exp = 6 if escala_m.group("w") == "M" else 9
         fin = m.end() + (escala_m.end() if escala_m else 0)
-        pct = _PORCENTAJE.match(resto)
-        porcentaje = pct is not None
-        if pct and not escala_m:
-            fin = m.end() + pct.end()
+        pct, bps = _PORCENTAJE.match(resto), _BPS.match(resto)
+        unidad_txt = "%" if pct else ("bps" if bps else "")
+        if not escala_m and (pct or bps):
+            fin = m.end() + (pct or bps).end()  # type: ignore[union-attr]
         inicio = m.start()
         if inicio > 0 and text[inicio - 1] in "€$£":
             inicio -= 1
@@ -155,23 +164,39 @@ def _nums_del_texto(text: str, *, split_spaces: bool) -> list[tuple[str, list[_N
                 valor = Decimal(cad)
                 decimales = len(cad.split(".")[1]) if "." in cad else 0
                 factor = Decimal(10) ** exp
+                digitos = len(re.sub(r"\D", "", trozo))
                 lecturas.append(
-                    _Num(valor * factor, Decimal(10) ** -decimales * factor, exp > 0, porcentaje, inicio, fin)
+                    _Num(valor * factor, Decimal(10) ** -decimales * factor, exp > 0, unidad_txt, digitos,
+                         inicio, fin)
                 )
         salida.append((text[inicio:fin].strip(), lecturas))
     return salida
 
 
 def _equivalentes(a: _Num, b: _Num) -> bool:
-    """¿Son la misma cifra? Exacta, o con equivalencia de escala y tolerancia de redondeo."""
+    """¿Es `b` (texto de la fuente) la cifra citada `a`? Exacta, o con escala y tolerancia de redondeo.
+
+    Reglas anti-falsos positivos: una unidad citada («%», «bps») debe aparecer pegada al número de la
+    fuente; el cambio de escala exige palabra de escala en algún lado y, en el lado sin ella, al menos
+    3 cifras; y una coincidencia aproximada exige que el número de la fuente tenga al menos la
+    precisión del citado (2.3 no casa con 2).
+    """
+    if a.unidad_txt and b.unidad_txt != a.unidad_txt:
+        return False
     if a.valor == b.valor:
         return True
-    if a.porcentaje or b.porcentaje or not (a.escalado or b.escalado):
+    if a.unidad_txt or b.unidad_txt or not (a.escalado or b.escalado):
         return False
     for k in _K_ESCALA:
         factor = Decimal(10) ** k
-        tolerancia = max(a.unidad, b.unidad * factor) / 2
-        if abs(a.valor - b.valor * factor) <= tolerancia:
+        if (not a.escalado and a.digitos < MIN_DIGITOS_SIN_ESCALA) or (
+            not b.escalado and b.digitos < MIN_DIGITOS_SIN_ESCALA
+        ):
+            continue
+        if a.valor == b.valor * factor:
+            return True
+        unidad_b = b.unidad * factor
+        if unidad_b <= a.unidad and abs(a.valor - b.valor * factor) <= max(a.unidad, unidad_b) / 2:
             return True
     return False
 
@@ -211,33 +236,121 @@ def _buscar_en_pagina(valores: list[list[_Num]], pagina: list[tuple[str, list[_N
     return encontrados
 
 
-def check_figures(report: AnalysisReport, document: IngestedDocument) -> tuple[FigureCheck, ...]:
-    """Verifica cada cifra clave del informe contra la página del documento que cita.
+TOLERANCIA_MERCADO = 0.01  # 1 % relativo frente a los números calculados en Python
 
-    - `verificada`: todos sus números aparecen (con tolerancia de formato y escala) en alguna de las
-      páginas citadas; `matched` recoge lo hallado.
-    - `no_encontrada`: cita una página pero algún número no aparece en ella.
-    - `sin_fuente_documental`: no cita el documento con página (solo gráfico/audio) o su valor no
-      contiene ningún número que comprobar. No se busca nunca en el resto del documento.
+
+def _objetivos_mercado(
+    tech: TechnicalSummary | None, derivs: DerivativesSnapshot | None
+) -> list[tuple[str, float, bool]]:
+    """(etiqueta, valor, es_fraccion) de las cifras de mercado calculadas; una fracción se compara también ×100."""
+    objetivos: list[tuple[str, float, bool]] = []
+    if tech is not None:
+        for etiqueta, valor, fraccion in (
+            ("Último cierre", tech.last_close, False), ("SMA20", tech.sma20, False), ("SMA50", tech.sma50, False),
+            ("EMA20", tech.ema20, False), ("RSI14", tech.rsi14, False), ("Mínimo del periodo", tech.range_low, False),
+            ("Máximo del periodo", tech.range_high, False), ("Rentabilidad del periodo", tech.period_return, True),
+            ("Volatilidad anualizada", tech.volatility_annual, True), ("Máximo drawdown", tech.max_drawdown, True),
+        ):
+            if valor is not None:
+                objetivos.append((etiqueta, float(valor), fraccion))
+        objetivos += [(f"Soporte {i + 1}", float(v), False) for i, v in enumerate(tech.supports)]
+        objetivos += [(f"Resistencia {i + 1}", float(v), False) for i, v in enumerate(tech.resistances)]
+    if derivs is not None:
+        objetivos += [
+            ("Funding anualizado", derivs.funding_annualized, True), ("Funding horario", derivs.funding_hourly, True),
+            ("Open interest", derivs.open_interest, False), ("Precio mark", derivs.mark_px, False),
+            ("Precio oráculo", derivs.oracle_px, False), ("Volumen nocional 24 h", derivs.day_notional_volume, False),
+            ("Cierre previo", derivs.prev_day_px, False),
+        ]
+    return objetivos
+
+
+def _cerca(a: float, t: float) -> bool:
+    return abs(abs(a) - abs(t)) <= TOLERANCIA_MERCADO * abs(t)
+
+
+def _buscar_en_mercado(valores: list[list[_Num]], objetivos: list[tuple[str, float, bool]]) -> list[str] | None:
+    """Etiquetas de las cifras de mercado (tolerancia 1 %) que casan con todos los números del valor."""
+    encontrados: list[str] = []
+    for lecturas in valores:
+        hallado = None
+        for a in lecturas:
+            for etiqueta, t, fraccion in objetivos:
+                if a.porcentaje and not fraccion:
+                    continue  # un porcentaje citado solo casa con magnitudes que son proporciones
+                destinos = (t * 100, t) if fraccion else (t,)
+                if any(_cerca(float(a.valor), d) for d in destinos):
+                    hallado = f"{etiqueta}: {t:.4g}"
+                    break
+            if hallado:
+                break
+        if hallado is None:
+            return None
+        encontrados.append(hallado)
+    return encontrados
+
+
+def _buscar_en_sec(valores: list[list[_Num]], fund: Fundamentals) -> list[str] | None:
+    """Hechos del 10-K que casan (con escala y redondeo) con todos los números del valor."""
+    encontrados: list[str] = []
+    for lecturas in valores:
+        hallado = None
+        for hecho in fund.facts:
+            b = _Num(Decimal(str(abs(hecho.value))), Decimal(1), True, "", 12, 0, 0)
+            if any(_equivalentes(a, b) for a in lecturas):
+                hallado = f"{hecho.label_es} FY{hecho.fy}: {hecho.value / 1e6:,.0f} M {hecho.unit}"
+                break
+        if hallado is None:
+            return None
+        encontrados.append(hallado)
+    return encontrados
+
+
+def check_figures(
+    report: AnalysisReport,
+    document: IngestedDocument | None,
+    *,
+    technicals: TechnicalSummary | None = None,
+    derivatives: DerivativesSnapshot | None = None,
+    fundamentals: Fundamentals | None = None,
+) -> tuple[FigureCheck, ...]:
+    """Verifica cada cifra clave del informe contra la fuente que cita.
+
+    - `documento p.N`: contra el texto de esa página (nunca contra el resto del documento).
+    - `sec`: contra los hechos del 10-K (equivalencia de escala y redondeo).
+    - `mercado`: contra los números calculados en Python (indicadores, derivados), con tolerancia del 1 %.
+
+    Estados: `verificada` (todos sus números aparecen; `matched` recoge lo hallado), `no_encontrada`
+    (cita una fuente comprobable pero algún número no aparece) y `sin_fuente_documental` (solo cita
+    gráfico/audio, no hay página citada o su valor no contiene ningún número).
     """
-    texto_paginas = _texto_por_pagina(document)
+    texto_paginas = _texto_por_pagina(document) if document is not None else {}
     cache: dict[int, list[tuple[str, list[_Num]]]] = {}
+    objetivos = _objetivos_mercado(technicals, derivatives)
     resultado: list[FigureCheck] = []
     for cifra in report.key_figures:
         paginas = _paginas_citadas(cifra.citations)
+        origenes = {c.origin for c in cifra.citations}
         valores = [lect for _, lect in _nums_del_texto(cifra.value, split_spaces=False)]
-        if not paginas or not valores:
+        comprobable = bool(paginas) or "sec" in origenes or "mercado" in origenes
+        if not comprobable or not valores:
             resultado.append(FigureCheck(cifra.name, cifra.value, "sin_fuente_documental"))
             continue
+        veredicto: FigureCheck | None = None
         for pagina in paginas:
             if pagina not in cache:
                 cache[pagina] = _nums_del_texto(texto_paginas.get(pagina, ""), split_spaces=True)
             hallados = _buscar_en_pagina(valores, cache[pagina])
             if hallados is not None:
-                resultado.append(
-                    FigureCheck(cifra.name, cifra.value, "verificada", pagina, " · ".join(dict.fromkeys(hallados)))
-                )
+                veredicto = FigureCheck(cifra.name, cifra.value, "verificada", pagina, " · ".join(dict.fromkeys(hallados)))
                 break
-        else:
-            resultado.append(FigureCheck(cifra.name, cifra.value, "no_encontrada", paginas[0]))
+        if veredicto is None and "sec" in origenes and fundamentals is not None:
+            hallados = _buscar_en_sec(valores, fundamentals)
+            if hallados is not None:
+                veredicto = FigureCheck(cifra.name, cifra.value, "verificada", None, " · ".join(dict.fromkeys(hallados)))
+        if veredicto is None and "mercado" in origenes and objetivos:
+            hallados = _buscar_en_mercado(valores, objetivos)
+            if hallados is not None:
+                veredicto = FigureCheck(cifra.name, cifra.value, "verificada", None, " · ".join(dict.fromkeys(hallados)))
+        resultado.append(veredicto or FigureCheck(cifra.name, cifra.value, "no_encontrada", paginas[0] if paginas else None))
     return tuple(resultado)

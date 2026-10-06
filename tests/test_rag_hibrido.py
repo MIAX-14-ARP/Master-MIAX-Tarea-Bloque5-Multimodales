@@ -222,3 +222,63 @@ def test_las_contradicciones_se_sanean_y_estan_en_el_esquema() -> None:
     guard = apply_guardrails(informe)
     assert [f.statement for f in guard.report.contradictions] == ["El gráfico cae pero el informe sube."]
     assert guard.blocked and AnalysisReport(summary="a", spoken_summary="b").contradictions == []
+
+
+# --- Ponderación del léxico según su cobertura y suelo semántico (ronda 3) ---------------------
+
+
+def test_cobertura_lexica_baja_con_pregunta_en_otro_idioma() -> None:
+    from finlens.domain.rag import Retriever
+
+    r = Retriever(CHUNKS)
+    assert r.coverage("gross margin") == 1.0
+    assert r.coverage("ventas y margen de gross") == pytest.approx(1 / 3)  # solo «gross» existe (margen no)
+    assert r.coverage("de la y") == 0.0
+    assert r.coverage("ventas netas") == 0.0
+
+
+def test_rrf_ponderado() -> None:
+    sin_peso = reciprocal_rank_fusion([[0, 1], [1, 0]])
+    con_peso = reciprocal_rank_fusion([[0, 1], [1, 0]], weights=[0.1, 1.0])
+    assert sin_peso[0] == sin_peso[1] and con_peso[1] > con_peso[0]
+
+
+def test_el_semantico_manda_cuando_el_lexico_no_tiene_cobertura() -> None:
+    class Dirigido:
+        """El fragmento 11 es el más cercano a la consulta; el resto es ruido léxico común."""
+
+        model = "x/dirigido"
+
+        def embed(self, texts, kind="document"):
+            if kind == "query":
+                return EmbeddingResult([[1.0, 0.0]], self.model)
+            return EmbeddingResult([[1.0, 0.0] if "ventas" in t.lower() else [0.0, 1.0] for t in texts], self.model)
+
+    chunks = [Chunk(i + 1, f"Inditex 2025 sección {i}") for i in range(11)]
+    chunks.append(Chunk(12, "Ventas netas del grupo Inditex en 2025"))
+    emb = Dirigido()
+    r = HybridRetriever(chunks).with_embeddings(emb.embed([c.text for c in chunks]).vectors, emb)
+    busqueda = r.search_detailed("ventas netas inditex 2025", k=3)
+    assert busqueda.lexical_weight <= 1.0
+    assert busqueda.results[0].chunk.page == 12  # el semántico lidera aunque el léxico esté lleno de ruido
+
+
+def test_el_suelo_semantico_mete_los_mejores_aunque_el_rrf_no_los_suba() -> None:
+    from finlens.domain.rag import SEMANTIC_FLOOR
+
+    n = 20
+    chunks = [Chunk(i + 1, f"inditex 2025 {'margen ' * (20 - i)}") for i in range(n)]
+
+    class Inverso:
+        model = "x/inverso"
+
+        def embed(self, texts, kind="document"):
+            if kind == "query":
+                return EmbeddingResult([[1.0, 0.0]], self.model)
+            # cuanto mayor es el índice del fragmento, más cercano a la consulta
+            return EmbeddingResult([[i / n, 1 - i / n] for i, _ in enumerate(texts)], self.model)
+
+    emb = Inverso()
+    r = HybridRetriever(chunks).with_embeddings(emb.embed([c.text for c in chunks]).vectors, emb)
+    paginas = {x.chunk.page for x in r.search("margen inditex 2025", k=4)}
+    assert {n, n - 1, n - 2} <= paginas and SEMANTIC_FLOOR == 3

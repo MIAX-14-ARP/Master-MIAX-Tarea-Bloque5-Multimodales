@@ -39,6 +39,17 @@ class Retriever:
         )
         self._matrix = self._vectorizer.fit_transform(c.text for c in self._chunks)
 
+    def coverage(self, query: str) -> float:
+        """Fracción (0..1) de los términos de `query` que existen en el vocabulario del documento.
+
+        Con pregunta en español e informe en inglés es baja: el léxico apenas aporta señal.
+        """
+        analizador = self._vectorizer.build_analyzer()
+        terminos = {t for t in analizador(query) if " " not in t}
+        if not terminos:
+            return 0.0
+        return sum(t in self._vectorizer.vocabulary_ for t in terminos) / len(terminos)
+
     def rank(self, query: str) -> list[tuple[int, float]]:
         """(índice de fragmento, similitud) de los que comparten términos con `query`, de mejor a peor."""
         consulta = self._vectorizer.transform([query])
@@ -62,14 +73,21 @@ class SearchResult:
     mode: str  # "híbrida" o "solo TF-IDF"
     embedding: EmbeddingResult | None = None
     error: str | None = None  # motivo de la degradación a solo TF-IDF, si la hubo
+    lexical_weight: float = 1.0  # peso del TF-IDF en la fusión (cobertura léxica de la consulta)
 
 
-def reciprocal_rank_fusion(rankings: Sequence[Sequence[int]], k: int = RRF_K) -> dict[int, float]:
-    """Puntuación RRF de cada índice a partir de varias listas ordenadas (mejor primero)."""
+SEMANTIC_FLOOR = 3  # los N mejores por similitud semántica siempre entran en el resultado
+
+
+def reciprocal_rank_fusion(
+    rankings: Sequence[Sequence[int]], k: int = RRF_K, weights: Sequence[float] | None = None
+) -> dict[int, float]:
+    """Puntuación RRF (opcionalmente ponderada por lista) de cada índice; cada lista va de mejor a peor."""
+    pesos = weights if weights is not None else [1.0] * len(rankings)
     puntos: dict[int, float] = {}
-    for ranking in rankings:
+    for ranking, peso in zip(rankings, pesos, strict=True):
         for posicion, indice in enumerate(ranking, start=1):
-            puntos[indice] = puntos.get(indice, 0.0) + 1.0 / (k + posicion)
+            puntos[indice] = puntos.get(indice, 0.0) + peso / (k + posicion)
     return puntos
 
 
@@ -134,9 +152,19 @@ class HybridRetriever:
         norma = np.linalg.norm(consulta)
         similitudes = self._matrix @ (consulta / norma if norma else consulta)
         ranking_semantico = [int(i) for i in np.argsort(-similitudes)]
-        puntos = reciprocal_rank_fusion([ranking_lexico, ranking_semantico])
+        # El léxico pesa según cuántos términos de la pregunta existen en el documento: con pregunta en
+        # español sobre un informe en inglés casi ninguno, y el TF-IDF solo añade ruido (años, nombres).
+        peso = self._lexical.coverage(query)
+        puntos = reciprocal_rank_fusion([ranking_lexico, ranking_semantico], weights=[peso, 1.0])
         orden = sorted(puntos, key=lambda i: -puntos[i])[:k]
-        return SearchResult([Retrieved(self._chunks[i], puntos[i]) for i in orden], "híbrida", emb)
+        suelo = ranking_semantico[: min(SEMANTIC_FLOOR, k)]  # suelo semántico
+        faltan = [i for i in suelo if i not in orden]
+        quitables = [i for i in reversed(orden) if i not in suelo]
+        for nuevo, viejo in zip(faltan, quitables, strict=False):
+            orden[orden.index(viejo)] = nuevo
+        orden = sorted(orden, key=lambda i: -puntos[i])
+        resultados = [Retrieved(self._chunks[i], puntos[i]) for i in orden]
+        return SearchResult(resultados, "híbrida", emb, lexical_weight=peso)
 
     def search(self, query: str, k: int = 8) -> list[Retrieved]:
         return self.search_detailed(query, k).results

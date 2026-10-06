@@ -267,3 +267,55 @@ def test_inditex_cifra_inventada_no_se_encuentra() -> None:
     doc = ingest_pdf(INDITEX.read_bytes())
     assert res("61,7 %", "p.5", doc).status == "no_encontrada"
     assert res("€99.9 billion", "p.5", doc).status == "no_encontrada"
+
+
+# --- Precisión, unidades y matched con el texto real (ronda 3) ---------------------------------
+
+
+@pytest.mark.skipif(not INDITEX.exists(), reason="falta samples/01_inditex")
+@pytest.mark.parametrize(
+    ("valor", "pagina", "esperado"),
+    [
+        ("around €2.3 billion", "p.20", "€2.3 billion"),
+        ("-1%", "p.20", "1%"),
+        ("stable gross margin (+/-50 bps)", "p.20", "50 bps"),
+        ("increase of 4%", "p.21", "4%"),
+    ],
+)
+def test_inditex_p20_p21_matched_es_el_texto_real_con_unidad(valor: str, pagina: str, esperado: str) -> None:
+    doc = ingest_pdf(INDITEX.read_bytes())
+    r = res(valor, pagina, doc)
+    assert r.status == "verificada" and r.matched == esperado
+    texto = " ".join(c.text for c in doc.chunks if c.page == int(pagina[2:]))
+    assert esperado in texto
+
+
+@pytest.mark.skipif(not INDITEX.exists(), reason="falta samples/01_inditex")
+@pytest.mark.parametrize(
+    ("valor", "pagina"),
+    [
+        ("around €2.4 billion", "p.20"),  # misma precisión, otro valor
+        ("-2%", "p.20"),
+        ("+/-30 bps", "p.20"),
+        ("increase of 5%", "p.21"),
+        ("increase of 4%", "p.20"),  # el 4% está en la p.21
+        ("€2.3 billion", "p.21"),
+    ],
+)
+def test_inditex_cifras_que_no_estan_en_la_pagina(valor: str, pagina: str) -> None:
+    doc = ingest_pdf(INDITEX.read_bytes())
+    assert res(valor, pagina, doc).status == "no_encontrada"
+
+
+def test_el_numero_de_la_pagina_debe_tener_al_menos_la_precision_citada() -> None:
+    doc = IngestedDocument(chunks=(Chunk(1, "Hay 2 filiales y 4 sedes en 2 países."),), n_pages=1)
+    assert res("around €2.3 billion", "p.1", doc).status == "no_encontrada"  # 2.3 no casa con 2
+    assert res("2.000 millones", "p.1", doc).status == "no_encontrada"  # un «2» suelto no es 2 000 M
+
+
+def test_un_porcentaje_citado_exige_porcentaje_en_la_pagina() -> None:
+    doc = IngestedDocument(chunks=(Chunk(1, "En 1 año hubo 4 cambios y un 7 por ciento más."),), n_pages=1)
+    assert res("-1%", "p.1", doc).status == "no_encontrada"
+    assert res("increase of 4%", "p.1", doc).status == "no_encontrada"
+    r = res("7 %", "p.1", doc)
+    assert r.status == "verificada" and r.matched == "7 por ciento"

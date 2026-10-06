@@ -1,7 +1,9 @@
 """Entrada de Streamlit de FinLens. Solo UI: la lógica vive en src/finlens."""
 import base64
 import dataclasses
+import hmac
 import logging
+import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -354,11 +356,32 @@ def show_brain(providers: Providers, form: Formulario) -> None:
     brain.render(datos)
 
 
+def access_granted() -> bool:
+    """Contraseña de la demo pública (APP_PASSWORD). Sin ella definida, el acceso es libre (uso local)."""
+    esperada = os.environ.get("APP_PASSWORD", "")
+    if not esperada or st.session_state.get("acceso_ok"):
+        return True
+    views.html(ui.editor_note(
+        "Demo privada: cada análisis consume crédito de APIs reales. Introduce la contraseña de acceso.",
+        titulo="Acceso",
+    ))
+    with st.form("acceso"):
+        clave = st.text_input("Contraseña", type="password")
+        if st.form_submit_button("Entrar", type="primary"):
+            if hmac.compare_digest(clave.encode(), esperada.encode()):
+                st.session_state.acceso_ok = True
+                st.rerun()
+            st.error("Contraseña incorrecta.")
+    return False
+
+
 def main() -> None:
     """Pantalla principal de FinLens."""
     st.set_page_config(page_title="FinLens · research multimodal", page_icon=":material/query_stats:",
                        layout="wide")
     theme.inject()
+    if not access_granted():
+        return
     settings = get_settings()
     configure_logging(settings.log_level)
     providers, aviso = load_providers(settings)

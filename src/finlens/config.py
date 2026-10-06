@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     # Nivel de logging del logger `finlens` (DEBUG|INFO|WARNING|ERROR).
     log_level: str = "INFO"
 
+    # User-Agent que exige la SEC (con un contacto): «FinLens academic project <email>».
+    sec_user_agent: str = ""
+
     # Límite de texto que se ingiere del PDF (palanca de coste).
     max_pdf_chars: int = 300_000
 

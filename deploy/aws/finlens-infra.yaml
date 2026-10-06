@@ -1,0 +1,206 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  FinLens - infraestructura de la demo: ECR, secreto en Secrets Manager, rol OIDC para GitHub Actions
+  (sin claves de AWS en GitHub), EC2 t3.micro con Docker y Caddy (HTTPS automatico) gestionada por SSM
+  (sin SSH). Coste aproximado: 11 USD/mes (t3.micro + IPv4 publica + 8 GB de disco). Borrar la pila
+  elimina todo salvo las imagenes de ECR y el secreto (ver docs/DESPLIEGUE.md).
+
+Parameters:
+  GitHubRepo:
+    Type: String
+    Default: raulrodriguezlr/finlens
+    Description: Repositorio (propietario/nombre) autorizado a desplegar.
+  GitHubBranch:
+    Type: String
+    Default: master
+    Description: Rama autorizada a desplegar.
+  CreateOidcProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "false si la cuenta ya tiene el proveedor OIDC token.actions.githubusercontent.com"
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues: [t3.micro, t3.small]
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+Conditions:
+  CrearOidc: !Equals [!Ref CreateOidcProvider, "true"]
+
+Resources:
+  Repositorio:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: finlens
+      ImageScanningConfiguration: {ScanOnPush: true}
+      LifecyclePolicy:
+        LifecyclePolicyText: >
+          {"rules":[{"rulePriority":1,"description":"conservar 5 imagenes",
+          "selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":5},
+          "action":{"type":"expire"}}]}
+      Tags: [{Key: Project, Value: finlens}]
+
+  Secreto:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: finlens/app
+      Description: FinLens - OPENROUTER_API_KEY y APP_PASSWORD (los escribe el workflow de GitHub)
+      SecretString: '{"OPENROUTER_API_KEY":"","APP_PASSWORD":""}'
+      Tags: [{Key: Project, Value: finlens}]
+
+  ProveedorOidc:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CrearOidc
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+      ThumbprintList: [6938fd4d98bab03faadb97b34396831e3780aea1]
+      Tags: [{Key: Project, Value: finlens}]
+
+  RolDespliegue:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: finlens-github-deploy
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepo}:ref:refs/heads/${GitHubBranch}
+      Policies:
+        - PolicyName: desplegar-finlens
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !GetAtt Repositorio.Arn
+              - Effect: Allow
+                Action: secretsmanager:PutSecretValue
+                Resource: !Ref Secreto
+              - Effect: Allow
+                Action: ssm:SendCommand
+                Resource:
+                  - !Sub arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript
+                  - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/${Servidor}
+              - Effect: Allow
+                Action: [ssm:GetCommandInvocation, ssm:ListCommandInvocations]
+                Resource: "*"
+      Tags: [{Key: Project, Value: finlens}]
+
+  RolServidor:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: finlens-ec2
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ec2.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      Policies:
+        - PolicyName: leer-secreto-finlens
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref Secreto
+      Tags: [{Key: Project, Value: finlens}]
+
+  PerfilServidor:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: finlens-ec2
+      Roles: [!Ref RolServidor]
+
+  GrupoSeguridad:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: FinLens - solo HTTP/HTTPS de entrada (sin SSH; administracion por SSM)
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0}
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0}
+      Tags: [{Key: Project, Value: finlens}]
+
+  Servidor:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref PerfilServidor
+      SecurityGroupIds: [!GetAtt GrupoSeguridad.GroupId]
+      MetadataOptions: {HttpTokens: required, HttpEndpoint: enabled}
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs: {VolumeSize: 12, VolumeType: gp3, Encrypted: true, DeleteOnTermination: true}
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          set -eux
+          dnf install -y docker
+          systemctl enable --now docker
+          if [ ! -f /swapfile ]; then
+            fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+            echo '/swapfile none swap sw 0 0' >> /etc/fstab
+          fi
+          mkdir -p /opt/finlens
+      Tags:
+        - {Key: Name, Value: finlens}
+        - {Key: Project, Value: finlens}
+
+  IpFija:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: !Ref Servidor
+      Tags: [{Key: Project, Value: finlens}]
+
+  AlarmaPresupuesto:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: FinLens - la CPU del servidor esta al 90 % durante 15 min (posible abuso de la demo)
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Dimensions: [{Name: InstanceId, Value: !Ref Servidor}]
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 90
+      ComparisonOperator: GreaterThanThreshold
+
+Outputs:
+  DeployRoleArn:
+    Description: Pegar como variable AWS_DEPLOY_ROLE_ARN del repositorio de GitHub
+    Value: !GetAtt RolDespliegue.Arn
+  InstanceId:
+    Description: Pegar como variable FINLENS_INSTANCE_ID del repositorio de GitHub
+    Value: !Ref Servidor
+  EcrRepository:
+    Value: !GetAtt Repositorio.RepositoryUri
+  PublicUrl:
+    Description: URL de la demo (HTTPS automatico con Caddy y sslip.io)
+    Value: !Sub
+      - https://${Guiones}.sslip.io
+      - Guiones: !Join ["-", !Split [".", !Ref IpFija]]
