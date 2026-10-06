@@ -56,6 +56,12 @@ _NUMERO = re.compile(r"(?<![\w.,])(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\
 _INDICADOR = re.compile(r"\b(?:SMA|EMA|RSI|MA|MM|MACD|medias?|sesion(?:es)?|velas?|d[ií]as?)\b", re.IGNORECASE)
 # Palabras que reabren un contexto de precio: tras ellas, un indicador anterior ya no afecta al número.
 _PALABRA_PRECIO = re.compile(r"\b(?:soporte|resistencia|precio|cierre|cierra|m[aá]ximo|m[ií]nimo|nivel|support|resistance)\b", re.IGNORECASE)
+# Valor de un oscilador tras su periodo («RSI 14 en 55», «RSI(14): 70»): el periodo corta la cláusula,
+# así que se reconoce aparte. Solo osciladores: su valor nunca es un precio.
+_OSCILADOR_ANTES = re.compile(
+    r"\b(?:RSI|MACD)\s*\(?(?:\d+\)?\s*(?:en|a|de|=|:|est[aá]\s+en|se\s+sit[uú]a\s+en|marca)?)?\s*$",
+    re.IGNORECASE,
+)
 _PERIODO_FINAL = re.compile(r"per[ií]odo\s*$", re.IGNORECASE)
 _CORTE_CLAUSULA = re.compile(r"[,;:()]|\d")
 VENTANA_INDICADOR = 6  # palabras previas que se miran para saber si el número es el valor de un indicador
@@ -111,7 +117,7 @@ def _no_es_precio(texto: str, m: re.Match[str], rango: tuple[float, float] | Non
     if m.group(3):  # porcentaje
         return True
     antes, despues = texto[: m.start()], texto[m.end() :]
-    if _tras_indicador(antes) or _DESPUES_NO_PRECIO.match(texto, m.end()):
+    if _tras_indicador(antes) or _OSCILADOR_ANTES.search(antes) or _DESPUES_NO_PRECIO.match(texto, m.end()):
         return True
     if _FECHA_ANTES.search(antes[-2:]) or _FECHA_DESPUES.match(despues[:2]):
         return True  # 2026-04-06, 06/04/2026

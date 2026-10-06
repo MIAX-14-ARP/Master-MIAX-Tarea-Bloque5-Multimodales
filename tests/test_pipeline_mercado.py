@@ -83,7 +83,7 @@ def test_con_grafico_subido_no_se_genera_otro_y_se_contrasta() -> None:
 
 
 def test_con_pdf_y_ticker_se_combinan_ambas_fuentes() -> None:
-    from tests.test_logging import pdf_minimo
+    from test_logging import pdf_minimo
 
     r = correr(pdf=pdf_minimo(), question="margen")
     nombres = list(pasos(r))

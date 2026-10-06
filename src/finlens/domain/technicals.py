@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Literal
+from typing import Literal, TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
@@ -15,7 +15,7 @@ from numpy.typing import NDArray
 from finlens.sources.base import MarketKind, PriceSeries
 
 Tendencia = Literal["alcista", "bajista", "lateral"]
-Floats = NDArray[np.float64]
+Floats: TypeAlias = NDArray[np.float64]
 
 # --- UMBRALES (documentados y ajustables) -----------------------------------------------------
 MIN_VELAS = 10  # por debajo no se calculan indicadores con sentido
