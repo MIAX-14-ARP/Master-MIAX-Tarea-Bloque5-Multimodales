@@ -29,7 +29,7 @@ from finlens.orchestration.pipeline import (  # noqa: E402
 from finlens.orchestration.trace import TraceStep, total_cost  # noqa: E402
 from finlens.providers.base import Message, ProviderError, Providers  # noqa: E402
 from finlens.providers.registry import build_mock_providers, build_providers  # noqa: E402
-from finlens.sources.registry import build_sources  # noqa: E402
+from finlens.sources.registry import PREFIJO_ACCION, PREFIJO_CRIPTO, build_sources  # noqa: E402
 from finlens.ui import brain, pipeline_map, theme, views  # noqa: E402
 from finlens.ui import components as ui  # noqa: E402
 from finlens.ui.demo_samples import (  # noqa: E402
@@ -53,6 +53,8 @@ HAS_COMPOSE = "illustration" in {f.name for f in dataclasses.fields(MediaResult)
 MARKET = "ticker" in {f.name for f in dataclasses.fields(AnalysisInput)}
 DEMO_TICKER = "ACME"
 RANGOS = {"1mo": "1 mes", "3mo": "3 meses", "6mo": "6 meses", "1y": "1 año", "2y": "2 años"}
+# Mercado del ticker: «Auto» deja decidir al registro; los otros fuerzan la fuente con su prefijo.
+MERCADOS = {"Auto": "", "Cripto · Hyperliquid": PREFIJO_CRIPTO, "Acción · Yahoo + SEC": PREFIJO_ACCION}
 
 
 def load_providers(settings: Settings) -> tuple[Providers, str | None]:
@@ -79,15 +81,24 @@ class Formulario:
 
 
 def _ranura_mercado(usar_ejemplos: bool) -> tuple[str, str]:
-    """Ranura D: ticker (acciones vía Yahoo + SEC, cripto vía Hyperliquid) y rango."""
+    """Ranura D: ticker (acciones vía Yahoo + SEC, cripto vía Hyperliquid), mercado y rango.
+
+    El ticker se valida contra la fuente elegida: si no cotiza ahí, el paso «Datos de mercado» lo dice.
+    """
     ticker = st.text_input(
         "Ticker", value=DEMO_TICKER if usar_ejemplos else "", placeholder="ITX.MC · AAPL · BTC",
         label_visibility="collapsed", max_chars=20,
     ).strip().upper()
+    mercado = st.radio(
+        "Mercado", list(MERCADOS), horizontal=True, label_visibility="collapsed",
+        help="Auto: BTC, ETH… son cripto; un ticker de la SEC es acción; si no, Hyperliquid. "
+        "Elige el mercado si el ticker existe en los dos (p. ej. BTC también es un ETF).",
+    )
     rango = st.selectbox("Rango", list(RANGOS), index=2, format_func=RANGOS.get, label_visibility="collapsed")
+    etiqueta = f"{ticker} · {mercado} · {RANGOS[rango]}" if mercado != "Auto" else f"{ticker} · {RANGOS[rango]}"
     views.html(ui.slot("D", "Mercado", "Ticker: datos reales, técnicos y SEC · opcional",
-                       nombre=f"{ticker} · {RANGOS[rango]}" if ticker else None, ejemplo=usar_ejemplos and bool(ticker)))
-    return ticker, rango
+                       nombre=etiqueta if ticker else None, ejemplo=usar_ejemplos and bool(ticker)))
+    return (MERCADOS[mercado] + ticker if ticker else ""), rango
 
 
 def read_inputs(providers: Providers) -> Formulario:

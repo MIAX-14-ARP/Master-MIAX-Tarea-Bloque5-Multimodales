@@ -46,8 +46,9 @@ def test_resolve_market_ticker_vacio_y_fallo_de_red() -> None:
         raise httpx.ConnectError("x", request=req)
 
     # sin red se degrada a la regla por defecto en lugar de romper la clasificación
-    assert resolve_market("BTC", HyperliquidSource(client=cliente(roto))) == "accion"
-    assert resolve_market("BTC-PERP", HyperliquidSource(client=cliente(roto))) == "cripto"
+    assert resolve_market("HYPE", HyperliquidSource(client=cliente(roto))) == "accion"
+    assert resolve_market("HYPE-PERP", HyperliquidSource(client=cliente(roto))) == "cripto"
+    assert resolve_market("BTC", HyperliquidSource(client=cliente(roto))) == "cripto"  # cripto principal: sin red
 
 
 def test_mock_cumple_protocolos() -> None:
