@@ -16,7 +16,7 @@ from typing import Any, Generic, Literal, TypeVar, cast
 from finlens.domain import cost
 from finlens.domain.chart_check import ChartCheck, check_chart_reading
 from finlens.domain.cost import Tariffs
-from finlens.domain.grounding import FigureCheck, check_figures
+from finlens.domain.grounding import FigureCheck, check_figures, check_market_claims
 from finlens.domain.guardrails import (
     REMOVED_NOTICE,
     SPOKEN_DISCLAIMER,
@@ -422,9 +422,11 @@ def _step_grounding(
         avisos = (
             f"Cifras no encontradas en la página citada del documento: {nombres}. Verifícalas antes de usarlas.",
         )
-    return _Done(
-        checks, "reglas deterministas", note=f"{verificadas}/{len(checks)} cifras verificadas", warnings=avisos
+    relaciones = check_market_claims(report, market.technicals if market else None)
+    nota = f"{verificadas}/{len(checks)} cifras verificadas" + (
+        f" · {len(relaciones)} relación(es) incoherente(s)" if relaciones else ""
     )
+    return _Done(checks, "reglas deterministas", note=nota, warnings=(*avisos, *relaciones))
 
 
 def _step_guardrails(report: AnalysisReport) -> _Done[GuardrailResult]:

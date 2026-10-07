@@ -67,6 +67,7 @@ class FigureCheck:
     status: Status
     page: int | None = None
     matched: str | None = None
+    source: Literal["documento", "mercado", "sec"] | None = None  # fuente en la que se verificó
 
 
 @dataclass(frozen=True)
@@ -310,6 +311,7 @@ def _objetivos_mercado(
 ) -> list[tuple[str, str, float, bool]]:
     """(clave, etiqueta, valor, es_fraccion) de las cifras de mercado calculadas; una fracción se compara también ×100."""
     objetivos: list[tuple[str, str, float, bool]] = []
+    simbolo = tech.symbol if tech is not None else "unidades"
     if tech is not None:
         for clave, etiqueta, valor, fraccion in (
             ("cierre", "Último cierre", tech.last_close, False), ("sma20", "SMA20", tech.sma20, False),
@@ -328,8 +330,8 @@ def _objetivos_mercado(
         objetivos += [
             ("funding", "Funding anualizado", derivs.funding_annualized, True),
             ("funding", "Funding horario", derivs.funding_hourly, True),
-            ("oi", "Open interest (unidades del activo)", derivs.open_interest, False),
-            ("oi", "Open interest nocional (USD)", derivs.open_interest * derivs.mark_px, False),
+            ("oi", f"Open interest ({simbolo})", derivs.open_interest, False),
+            ("oi_nocional", "Open interest nocional", derivs.open_interest * derivs.mark_px, False),
             ("precio", "Precio mark", derivs.mark_px, False), ("precio", "Precio oráculo", derivs.oracle_px, False),
             ("volumen", "Volumen nocional 24 h", derivs.day_notional_volume, False),
             ("precio", "Cierre previo", derivs.prev_day_px, False),
@@ -357,7 +359,7 @@ _ASOCIACION = (  # (regex sobre nombre+valor sin acentos, claves de objetivo)
     (r"soporte|support", {"soporte"}),
     (r"resistencia|resistance", {"resistencia"}),
     (r"funding", {"funding"}),
-    (r"open interest|interes abierto|\boi\b", {"oi"}),
+    (r"open interest|interes abierto|\boi\b", {"oi", "oi_nocional"}),
     (r"volumen|volume", {"volumen"}),
     (r"\bmark\b|oraculo|oracle", {"precio"}),
 )
@@ -370,6 +372,20 @@ def _claves_de(nombre: str, valor: str) -> set[str] | None:
         if re.search(patron, texto):
             return set(claves)
     return None
+
+
+def _formato_objetivo(clave: str, etiqueta: str, valor: float, fraccion: bool) -> str:
+    """Texto humano de la cifra de mercado verificada (sin notación científica)."""
+    if fraccion:
+        return f"{etiqueta}: {valor * 100:,.2f} %"
+    if clave == "rsi":
+        return f"{etiqueta}: {valor:,.1f}"
+    if clave == "oi":
+        unidad = etiqueta[etiqueta.index("(") + 1:-1] if "(" in etiqueta else ""
+        return f"{etiqueta.split(' (')[0]}: {valor:,.0f} {unidad}".rstrip()
+    if clave in ("oi_nocional", "volumen"):
+        return f"{etiqueta}: {valor / 1e6:,.0f} M USD"
+    return f"{etiqueta}: {valor:,.2f}"
 
 
 def _cerca(a: float, t: float) -> bool:
@@ -388,12 +404,12 @@ def _buscar_en_mercado(
     for lecturas in valores:
         hallado = None
         for a in lecturas:
-            for _clave, etiqueta, t, fraccion in candidatos:
+            for clave, etiqueta, t, fraccion in candidatos:
                 if a.porcentaje and not fraccion:
                     continue  # un porcentaje citado solo casa con magnitudes que son proporciones
                 destinos = (t * 100, t) if fraccion else (t,)
                 if any(_cerca(float(a.valor), d) for d in destinos):
-                    hallado = f"{etiqueta}: {t:.4g}"
+                    hallado = _formato_objetivo(clave, etiqueta, t, fraccion)
                     break
             if hallado:
                 break
@@ -460,15 +476,68 @@ def check_figures(
                 cache[pagina] = _nums_del_texto(texto_paginas.get(pagina, ""), split_spaces=True, escala_implicita=True)
             hallados = _buscar_en_pagina(valores, cache[pagina])
             if hallados is not None:
-                veredicto = FigureCheck(cifra.name, cifra.value, "verificada", pagina, " · ".join(dict.fromkeys(hallados)))
+                veredicto = FigureCheck(
+                    cifra.name, cifra.value, "verificada", pagina, " · ".join(dict.fromkeys(hallados)), "documento"
+                )
                 break
         if veredicto is None and "sec" in origenes and fundamentals is not None:
             hallados = _buscar_en_sec(valores, fundamentals)
             if hallados is not None:
-                veredicto = FigureCheck(cifra.name, cifra.value, "verificada", None, " · ".join(dict.fromkeys(hallados)))
+                veredicto = FigureCheck(
+                    cifra.name, cifra.value, "verificada", None, " · ".join(dict.fromkeys(hallados)), "sec"
+                )
         if veredicto is None and "mercado" in origenes and objetivos:
             hallados = _buscar_en_mercado(valores, objetivos, _claves_de(cifra.name, cifra.value))
             if hallados is not None:
-                veredicto = FigureCheck(cifra.name, cifra.value, "verificada", None, " · ".join(dict.fromkeys(hallados)))
+                veredicto = FigureCheck(
+                    cifra.name, cifra.value, "verificada", None, " · ".join(dict.fromkeys(hallados)), "mercado"
+                )
         resultado.append(veredicto or FigureCheck(cifra.name, cifra.value, "no_encontrada", paginas[0] if paginas else None))
     return tuple(resultado)
+
+
+# --- Control determinista de relaciones precio ↔ medias --------------------------------------------
+
+_RELACION_MEDIA = re.compile(
+    r"\b(por encima|por debajo|encima|debajo|sobre|bajo|above|below)\s+(?:de\s+)?(?:la\s+|el\s+|su\s+|the\s+)?"
+    r"(?:sma|media\s+movil|moving\s+average|ma)\s*(?:de\s+)?\(?\s*(20|50)\b"
+)
+_SUJETO_PRECIO = re.compile(r"\b(precio|cierre|cotizacion|price|close|cotiza|cotizando)\b")
+_ARRIBA = {"por encima", "encima", "sobre", "above"}
+
+
+def _textos_del_informe(report: AnalysisReport) -> list[str]:
+    textos = [report.summary, report.spoken_summary]
+    findings = [report.chart_reading, *report.management_statements, *report.correlations, *report.contradictions]
+    textos += [f.statement for f in findings if f is not None]
+    return textos
+
+
+def check_market_claims(report: AnalysisReport, tech: TechnicalSummary | None) -> list[str]:
+    """Avisos por frases «el precio está por encima/debajo de la SMA20/SMA50» que contradicen los datos.
+
+    Heurística simple y documentada: solo frases cuyo sujeto parece el precio (precio, cierre, cotización)
+    y que nombran la SMA20 o la SMA50; se compara con el último cierre frente a esa media. No analiza
+    negaciones ni frases compuestas: es un control de coherencia aviso, no un veto.
+    """
+    if tech is None:
+        return []
+    medias = {"20": tech.sma20, "50": tech.sma50}
+    avisos: list[str] = []
+    for texto in _textos_del_informe(report):
+        for frase in re.split(r"(?<=[.!?;])\s+", texto):
+            norm = _sin_acentos(frase)
+            if not _SUJETO_PRECIO.search(norm):
+                continue
+            for m in _RELACION_MEDIA.finditer(norm):
+                media = medias.get(m.group(2))
+                if media is None:
+                    continue
+                dice_arriba = m.group(1) in _ARRIBA
+                if dice_arriba != (tech.last_close > media):
+                    real = "por encima" if tech.last_close > media else "por debajo"
+                    avisos.append(
+                        f"Posible error de razonamiento: el informe sitúa el precio «{m.group(1)}» de la SMA{m.group(2)}, "
+                        f"pero el último cierre ({tech.last_close:,.2f}) está {real} de ella ({media:,.2f})."
+                    )
+    return list(dict.fromkeys(avisos))

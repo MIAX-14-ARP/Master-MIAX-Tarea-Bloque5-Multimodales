@@ -95,8 +95,12 @@ def _informe_de_mercado(messages: Sequence[Message]) -> dict | None:
     cierre = re.search(r"Último cierre: ([\d,.]+)\.", contenido)
     rentab = re.search(r"Rentabilidad del periodo: (-?[\d.]+%)", contenido)
     sec = re.search(r"- Ingresos: FY\d+: ([\d,]+ M USD)", contenido)
+    oi = re.search(r"open interest \((\w+), unidades del activo\) ([\d,]+)", contenido)
     cita_m = [{"origin": "mercado", "location": ""}]
     cifras = []
+    if oi:
+        cifras.append({"name": "Open interest", "value": f"{oi.group(2)} {oi.group(1)}", "period": "",
+                       "citations": cita_m})
     if cierre:
         cifras.append({"name": "Último cierre", "value": cierre.group(1), "period": "", "citations": cita_m})
     if rentab:

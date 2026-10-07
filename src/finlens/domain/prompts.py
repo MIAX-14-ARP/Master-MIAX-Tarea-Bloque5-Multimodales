@@ -34,6 +34,11 @@ símbolo y unidad, p.ej. «€10.7 billion» o «58.3%»): no la conviertas ni l
 - Si hay bloque <mercado>, úsalo como fuente verificable de precios y cifras técnicas (cítalo como «mercado»); \
 si hay <sec>, sus importes son los oficiales del 10-K (cítalos como «sec»). Si el gráfico y los números de \
 <mercado> discrepan, dilo en «contradictions».
+- Las relaciones entre cifras de <mercado> (cierre frente a SMA20/SMA50, cruce de medias, zona del RSI, posición \
+en el rango, signo del funding) vienen ya calculadas en «Relaciones ya calculadas»: úsalas literalmente y no \
+infieras comparaciones entre cifras por tu cuenta.
+- En «key_figures.value» del open interest incluye la unidad del activo (p.ej. «39,605 BTC»), y «USD» si das su \
+nocional.
 - Los datos que falten (por ejemplo, no se aportó gráfico o audio) van en «limitations».
 - «spoken_summary» es un guion breve (máximo 6 frases) para leer en voz alta, sin símbolos ni tablas."""
 
@@ -75,6 +80,61 @@ def _pct(valor: float | None) -> str:
     return "n/d" if valor is None else f"{valor:.2%}"
 
 
+RSI_SOBRECOMPRA = 70.0
+RSI_SOBREVENTA = 30.0
+
+
+def _relacion(nombre: str, cierre: float, media: float | None) -> str | None:
+    if media is None or media == 0:
+        return None
+    lado = "por encima" if cierre > media else "por debajo"
+    return (
+        f"El cierre ({_num(cierre)}) está {lado} de la {nombre} ({_num(media)}), "
+        f"a un {abs(cierre / media - 1):.2%} de distancia."
+    )
+
+
+def market_relations(tech: TechnicalSummary, derivs: DerivativesSnapshot | None = None) -> list[str]:
+    """Relaciones entre cifras ya calculadas en Python, en frases explícitas.
+
+    Los LLM se equivocan al comparar cifras («por encima de la SMA20» con el cierre por debajo): se les
+    da la relación hecha para que la usen literalmente en vez de inferirla.
+    """
+    frases = [
+        f for f in (
+            _relacion("SMA20", tech.last_close, tech.sma20), _relacion("SMA50", tech.last_close, tech.sma50)
+        ) if f
+    ]
+    if tech.sma20 is not None and tech.sma50 is not None:
+        if tech.sma20 > tech.sma50:
+            frases.append("La SMA20 está por encima de la SMA50 (configuración de cruce alcista).")
+        elif tech.sma20 < tech.sma50:
+            frases.append("La SMA20 está por debajo de la SMA50 (configuración de cruce bajista).")
+        else:
+            frases.append("La SMA20 y la SMA50 coinciden.")
+    if tech.rsi14 is not None:
+        if tech.rsi14 > RSI_SOBRECOMPRA:
+            zona = f"zona de sobrecompra (>{RSI_SOBRECOMPRA:.0f})"
+        elif tech.rsi14 < RSI_SOBREVENTA:
+            zona = f"zona de sobreventa (<{RSI_SOBREVENTA:.0f})"
+        else:
+            zona = f"zona neutral ({RSI_SOBREVENTA:.0f}-{RSI_SOBREVENTA + 40:.0f})"
+        frases.append(f"El RSI14 ({_num(tech.rsi14, 1)}) está en {zona}.")
+    ancho = tech.range_high - tech.range_low
+    if ancho > 0 and tech.range_low > 0 and tech.range_high > 0:
+        frases.append(
+            f"El cierre está un {tech.last_close / tech.range_low - 1:.2%} por encima del mínimo del periodo y "
+            f"un {1 - tech.last_close / tech.range_high:.2%} por debajo del máximo "
+            f"(posición en el rango: {(tech.last_close - tech.range_low) / ancho:.0%})."
+        )
+    if derivs is not None:
+        signo = "positivo (los largos pagan a los cortos)" if derivs.funding_annualized > 0 else (
+            "negativo (los cortos pagan a los largos)" if derivs.funding_annualized < 0 else "nulo"
+        )
+        frases.append(f"El funding es {signo}: {_pct(derivs.funding_annualized)} anualizado.")
+    return frases
+
+
 def format_market(tech: TechnicalSummary, derivs: DerivativesSnapshot | None = None) -> str:
     """Resumen de mercado calculado en Python (cifras verificables) para el bloque <mercado>."""
     lineas = [
@@ -96,6 +156,10 @@ def format_market(tech: TechnicalSummary, derivs: DerivativesSnapshot | None = N
             f"mark {_num(derivs.mark_px)}, oráculo {_num(derivs.oracle_px)}, "
             f"volumen nocional 24 h {_num(derivs.day_notional_volume, 0)} USD."
         )
+    relaciones = market_relations(tech, derivs)
+    if relaciones:
+        lineas.append("Relaciones ya calculadas (úsalas literalmente, no infieras otras):")
+        lineas += [f"- {r}" for r in relaciones]
     return "\n".join(lineas)
 
 
