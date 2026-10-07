@@ -1,294 +1,286 @@
-# FinLens – Análisis multimodal de informes financieros
+# FinLens – Research financiero multimodal con cifras verificadas
 
 > Taller B5-T4 · Máster en IA y computación cuantitativa aplicada a mercados financieros (Instituto BME)
-> Equipo: **[PENDIENTE: Nombre 1, Nombre 2, Nombre 3]** · Entrega: 8 de octubre de 2026
+> Equipo: **Piettro Rodrigues, Alonso y Raúl Rodríguez** · Entrega: 8 de octubre de 2026
+>
+> *Startup ficticia creada como práctica de máster: el modelo de negocio es un ejercicio, no una oferta real.*
 
-**Demo desplegada:** **[PENDIENTE: enlace]** · **Vídeo de la demo (3–5 min):** **[PENDIENTE: enlace]**
+**Demo desplegada (AWS):** <https://108-128-114-211.sslip.io> (protegida con contraseña: cada análisis gasta
+crédito real; pídela al equipo) · **Vídeo de la demo (3–5 min):** **[PENDIENTE: enlace]**
 
 ![Pantalla principal de FinLens](docs/img/home.png)
 
-> **Nota sobre las capturas:** están hechas en **modo demo** (respuestas simuladas, marcadas como «(Simulado)»).
-> Muestran la interfaz y el flujo reales, pero no la calidad del análisis. Las cifras de coste y latencia de
-> la sección 5 **no se han rellenado con datos simulados**: se generan con `scripts/medir.py` y claves reales.
-
 ## 1. Problema y propuesta de valor
 
-El analista financiero dedica horas a cruzar fuentes que viven en formatos distintos y que nada conecta:
-el **informe anual en PDF** (cientos de páginas), el **gráfico de cotización** y el **audio de la conferencia
-de resultados**. Leer el PDF, interpretar el gráfico y escuchar la llamada son tres tareas separadas, y la
-parte valiosa —*¿lo que dijo la dirección encaja con las cifras y con lo que descuenta el mercado?*— se hace
-a mano y sin trazabilidad.
+El analista financiero cruza a mano fuentes que viven en formatos distintos: el **informe anual en PDF**
+(cientos de páginas, a menudo en inglés), el **gráfico de cotización**, el **audio de la conferencia de
+resultados** y los **datos de mercado**. La parte valiosa —*¿lo que dice la dirección encaja con las cifras y
+con lo que descuenta el mercado?*— se hace sin trazabilidad, y los asistentes de IA genéricos **inventan
+cifras**.
 
 **Público objetivo (B2B):** analistas junior y *sell-side*, EAFI y asesores independientes, gestoras boutique
 y equipos de relación con inversores. Extensión B2B2C: módulo embebido en plataformas de brokers.
 
-**Propuesta de valor multimodal:** una sola consulta cruza **texto, imagen y voz** y devuelve cifras **con su
-fuente** (`documento p.3`), la lectura del gráfico y las declaraciones de la dirección, y señala dónde
-coinciden o se contradicen. El valor diferencial es la **correlación entre modalidades**, no el chat: un único
-modelo conversacional no recupera, por sí solo, la página exacta del informe, no lee el gráfico con visión
-y no transcribe la llamada; aquí cada paso lo resuelve un modelo especializado y el orquestador los encadena.
+**Propuesta de valor:** una sola consulta cruza **texto, imagen, voz y datos de mercado** y devuelve una nota
+de research donde **cada cifra lleva su fuente y un sello de verificación** calculado por código, no por el
+LLM. Tres diferenciales:
+
+1. **Cifras verificadas:** Python comprueba que cada número aparece en la página citada del PDF, en los
+   fundamentales oficiales de la SEC o en los indicadores calculados («✓ VERIFICADA p.5 · «39,864»»).
+2. **«La IA vio · los datos dicen»:** el modelo de visión lee el gráfico y Python contrasta cada nivel,
+   soporte o tendencia que afirma con la serie real de precios (detector de alucinaciones visuales).
+3. **Correlación y contradicciones entre modalidades:** informe ↔ gráfico ↔ dirección ↔ mercado.
 
 ```mermaid
 flowchart LR
-  P["Problema<br/>PDF + gráfico + audio<br/>dispersos, horas de trabajo manual"] --> S["FinLens<br/>una consulta, tres modalidades"]
-  S --> V1["Cifras con fuente<br/>(documento p.N)"]
-  S --> V2["Lectura del gráfico"]
+  P["Problema<br/>PDF + gráfico + audio + mercado<br/>dispersos · IA que inventa cifras"] --> S["FinLens<br/>una consulta, 6 modelos encadenados"]
+  S --> V1["Cifras con fuente<br/>y sello de verificación"]
+  S --> V2["Lectura del gráfico<br/>contrastada con los datos"]
   S --> V3["Declaraciones de la dirección"]
-  S --> V4["Correlación entre las tres"]
-  V1 & V2 & V3 & V4 --> O["Informe citado · audio · infografía · chat"]
+  S --> V4["Correlaciones y contradicciones"]
+  V1 & V2 & V3 & V4 --> O["Nota citada · audio · infografía · chat"]
 ```
 
 ## 2. Qué hace (demo en 30 segundos)
 
-1. Subes un informe anual (PDF), el gráfico de cotización y el audio de la conferencia (o tu pregunta por voz).
-2. Escribes una pregunta, o la dices por voz, o la dejas vacía para un resumen general.
-3. Obtienes un informe con cifras **citadas**, la lectura del gráfico, un resumen en **audio** y una **infografía**.
-4. Sigues preguntando en el **chat**, con el contexto del informe y del documento.
-5. La pestaña **Traza de modelos** enseña qué modelo hizo cada paso, cuánto tardó y cuánto costó.
+1. Aportas cualquier combinación de: informe anual (PDF), gráfico de cotización, audio de la conferencia o
+   **tu pregunta por voz** (grabada en el navegador), y un **ticker** (`ITX.MC`, `AAPL`, `BTC`…).
+2. Con ticker, FinLens **descarga los datos**: acciones de **Yahoo Finance**, cripto de **Hyperliquid**
+   (velas, *funding* y *open interest* on-chain) y fundamentales oficiales de la **SEC EDGAR** (10-K).
+3. Obtienes una **nota de análisis** con cifras citadas y verificadas, lectura del gráfico contrastada,
+   declaraciones de la dirección, correlaciones y contradicciones, un **resumen en audio** y una
+   **infografía** cuyas cifras dibuja Python.
+4. Sigues preguntando en el **chat**, que reutiliza el índice del documento.
+5. El **cerebro** (red neuronal 3D) y el **mapa de la cadena** muestran qué entra, qué modelo actúa, en qué
+   orden y en paralelo, y qué sale; la **traza** da tiempo y coste por paso.
 
-| Entradas | Salidas |
+| Entradas (6) | Salidas (6) |
 |---|---|
-| PDF · imagen de gráfico · audio (conferencia o pregunta por voz) · texto | Informe estructurado con fuentes · audio TTS · infografía · chat de seguimiento |
+| PDF · imagen de gráfico · audio (conferencia) · voz (pregunta) · texto · ticker → datos de mercado y SEC | Nota citada y verificada · contraste visión↔datos · audio TTS · infografía · chat · traza de coste |
 
 ## 3. Arquitectura y flujo de datos multimodal
 
 ```mermaid
 flowchart LR
-  PDF[PDF informe] --> ING["Ingesta y troceado<br/>pypdf"] --> RAG["Índice de recuperación<br/>TF-IDF local"]
-  IMG[Gráfico de velas] --> VIS["Modelo de visión<br/>Claude"]
-  AUD[Audio / voz] --> STT["Voz a texto<br/>Whisper"]
-  Q[Pregunta] --> RAG
-  RAG --> LLM["LLM analista<br/>Claude"]
-  VIS --> LLM
-  STT --> LLM
-  LLM --> GR["Guardrails de compliance<br/>(deterministas)"]
-  GR --> REP[Informe + fuentes]
-  REP --> TTS["TTS: resumen en audio"]
-  REP --> FIG["Verificación de cifras<br/>(determinista)"]
-  REP --> PRM["LLM: prompt de ilustración<br/>(sin texto ni cifras)"] --> IGEN["Modelo de imagen"] --> COMP["Composición Python<br/>cifras verificadas"]
-  FIG --> COMP --> INFO[Infografía]
+  PDF[PDF informe] --> ING["Ingesta y troceado<br/>pypdf"] --> EMB["Embeddings multilingües<br/>bge-m3"] & TF["TF-IDF local"]
+  TK[Ticker] --> MD["Datos de mercado<br/>Yahoo · Hyperliquid"] --> TEC["Indicadores técnicos<br/>numpy"] --> GC["Gráfico generado<br/>matplotlib"]
+  TK --> SEC["Fundamentales<br/>SEC EDGAR XBRL"]
+  IMG[Gráfico subido] --> VIS
+  GC --> VIS["Visión<br/>gemini-3.8-flash"] --> CC["Contraste visión ↔ datos<br/>Python"]
+  TEC --> CC
+  AUD[Audio / voz] --> STT["Voz a texto<br/>whisper-large-v3-turbo"]
+  Q[Pregunta] --> RAG["Recuperación híbrida<br/>RRF ponderado"]
+  EMB & TF --> RAG
+  RAG & VIS & STT & TEC & SEC --> LLM["LLM analista<br/>claude-sonnet-5.5"]
+  LLM --> GR["Guardrails compliance<br/>(deterministas)"] --> VER["Verificación de cifras<br/>(determinista)"] --> REP[Nota citada]
+  REP --> TTS["Texto a voz<br/>kokoro-82m"]
+  REP --> PRM["LLM: prompt de ilustración<br/>(sin cifras)"] --> IGEN["Imagen<br/>flux.2-klein-4b"] --> COMP["Composición Python<br/>cifras verificadas"]
   REP --> CHAT[Chat de seguimiento]
 ```
 
-La **visión y la transcripción se ejecutan en paralelo**, y también el audio y la infografía. El informe
-aparece en pantalla en cuanto está listo; el audio y la infografía llegan después (render progresivo).
+**Paralelismo real:** embeddings ‖ (mercado → técnicos → gráfico → visión → contraste) ‖ SEC ‖ STT, y luego
+TTS ‖ infografía. La nota aparece en cuanto está lista; audio e infografía llegan después.
 
-Cada capacidad se asigna a un proveedor de forma independiente (`*_PROVIDER`). Con una sola clave de
-**OpenRouter** funcionan las cinco; también se pueden usar Anthropic (LLM/visión) y OpenAI (voz/imagen).
+### Cadena de modelos (todos vía OpenRouter con una sola clave)
 
-| Modalidad | Modelo por defecto (OpenRouter) | Rol |
-|---|---|---|
-| Texto→texto | `anthropic/claude-sonnet-5.5` | Análisis, síntesis y chat |
-| Imagen→texto | `google/gemini-3.8-flash` | Lectura del gráfico |
-| Voz→texto | `openai/whisper-large-v3-turbo` | Transcripción |
-| Texto→voz | `hexgrad/kokoro-82m` (voz `ef_dora`) | Resumen en audio |
-| Texto→imagen | `black-forest-labs/flux.2-klein-4b` | Ilustración de fondo de la infografía (sin cifras: las compone Python) |
-| Recuperación | TF-IDF (scikit-learn) | Local, coste 0 | Selección de fragmentos del PDF |
+| Paso | Modelo por defecto | Por qué este | Alternativas probadas o configurables |
+|---|---|---|---|
+| Texto→texto (análisis, chat) | `anthropic/claude-sonnet-5.5` | Mejor seguimiento de JSON con citas; reconoce cuando un dato no consta en vez de inventarlo | `anthropic/claude-opus-5.5` (más caro), `google/gemini-3.8-flash` (más barato) |
+| Imagen→texto (gráfico) | `google/gemini-3.8-flash` | Multimodal rápido (≈5 s) y barato (≈0,002 USD); proveedor distinto al LLM | `anthropic/claude-sonnet-5.5` |
+| Voz→texto | `openai/whisper-large-v3-turbo` | Abierto, ≈0,0001 USD por audio de 80 s | `openai/whisper-large-v3` **devolvió transcripciones truncadas** en pruebas; `openai/gpt-4o-mini-transcribe` y `mistralai/voxtral-mini-transcribe` completas → el primero es el **respaldo automático** si se detecta truncado |
+| Texto→voz | `hexgrad/kokoro-82m` | Modelo abierto de 82 M parámetros con voces en español; 0,0004 USD por resumen | `google/gemini-3.8-flash-tts`, `mistralai/voxtral-mini-tts-2603` |
+| Texto→imagen | `black-forest-labs/flux.2-klein-4b` | Abierto y barato (0,015 USD); **solo ilustra**: las cifras las dibuja Python porque los modelos de difusión escriben mal los números | `bytedance-seed/seedream-4.5`, `openai/gpt-image-1-mini` |
+| Embeddings | `baai/bge-m3` | Multilingüe y abierto: con la pregunta en español encuentra las páginas en inglés (1,8 s, 0,0002 USD para 78 fragmentos) | `qwen/qwen3-embedding-8b` (6,7 s y peor ranking en nuestra prueba); TF-IDF solo **falla** con pregunta en español y PDF en inglés |
+| Datos de mercado | Yahoo Finance · Hyperliquid · SEC EDGAR | Públicos y sin clave; Hyperliquid aporta derivados on-chain (*funding*, OI) | En producción: proveedor con licencia (p. ej. BME Market Data) |
 
-> Los nombres de modelo y las tarifas son **configurables por variable de entorno** (`.env`) y **deben
-> verificarse en la documentación oficial** de cada proveedor: los catálogos cambian y se retiran modelos.
-> Hay un test opcional que comprueba que cada modelo configurado existe (ver sección 4).
+Más los pasos **deterministas en Python**: ingesta, TF-IDF, fusión RRF, indicadores técnicos, gráfico,
+contraste visión↔datos, guardrails, verificación de cifras y composición de la infografía. Son el
+antídoto contra las alucinaciones: los números que ve el usuario salen de datos o los comprueba el código.
 
-**Capas** (la separación la hace cumplir un test, `tests/test_arquitectura.py`):
+Cada capacidad se elige por separado (`*_PROVIDER=auto|openrouter|anthropic|openai|mock`); también funciona
+con claves nativas de Anthropic y OpenAI. Sin claves, **modo demo** completo con modelos simulados.
+
+**Capas** (la separación la hace cumplir `tests/test_arquitectura.py`):
 
 | Capa | Responsabilidad |
 |---|---|
-| `providers/` | Conexión con los modelos. **Única** capa que importa los SDK de `anthropic` y `openai`. Define los `Protocol` (`base.py`), las implementaciones reales y los *mocks*. |
-| `domain/` | Lógica de negocio: ingesta, RAG, prompts, esquemas Pydantic, guardrails, coste. Solo conoce los `Protocol`. |
-| `orchestration/` | Encadenado de pasos, paralelismo, traza, degradación, caché y métricas. |
+| `providers/` | Conexión con los modelos de IA. **Única** capa que importa los SDK. `Protocol`s en `base.py`, implementaciones OpenRouter/Anthropic/OpenAI y *mocks*. |
+| `sources/` | Conectores de datos externos (Yahoo, Hyperliquid, SEC). Sin IA. |
+| `domain/` | Lógica de negocio pura: ingesta, RAG híbrido, prompts, esquemas Pydantic, guardrails, verificación de cifras, técnicos, contraste, infografía, coste. |
+| `orchestration/` | Encadenado, paralelismo, traza, degradación, caché LRU y métricas. |
 | `ui/` + `app.py` | Interfaz Streamlit. Sin lógica de negocio. |
 
-**Decisiones de diseño**
+**Decisiones de diseño:** salidas del LLM como JSON validado con Pydantic y citas obligatorias (un reintento
+con el motivo del fallo); degradación elegante (si falla un paso opcional se entrega el resto con aviso);
+contenido de documentos tratado como datos, no instrucciones (*prompt injection*); detección de STT
+truncado con reintento; razonamiento del LLM acotado (`OPENROUTER_REASONING_EFFORT`) para no cortar el JSON.
 
-- **Modo demo con *mocks***: si faltan claves o `DEMO_MODE=true`, la app arranca y recorre todo el flujo con
-  respuestas simuladas. Los tests usan solo *mocks*: cero coste.
-- **Salidas del LLM = JSON validado con Pydantic** y con citas obligatorias. Si el JSON es inválido se
-  reintenta una vez y, si vuelve a fallar, se degrada con un mensaje claro.
-- **Degradación elegante**: si falla un paso opcional (visión, STT, TTS, imagen) se entrega el informe con
-  un aviso. Solo la ingesta del PDF y el análisis son obligatorios.
-- **Guardrail determinista de compliance** (ver sección 6) y *disclaimer* en todas las salidas.
-- **Seguridad frente a *prompt injection***: los prompts tratan el contenido del PDF y de la transcripción como
-  datos, no como instrucciones.
-- **Palancas de coste**: recuperación TF-IDF en lugar de enviar el PDF entero, límite de texto ingerido,
-  caché por *hash* de los archivos, casillas para omitir audio e infografía, y límite de subida de 30 MB.
-
-Más detalle y diagramas de secuencia en [`docs/arquitectura.md`](docs/arquitectura.md).
+Más detalle en [`docs/arquitectura.md`](docs/arquitectura.md); especificaciones en
+[`docs/05_SPEC_MEJORAS.md`](docs/05_SPEC_MEJORAS.md) y [`docs/06_SPEC_MERCADO_Y_CEREBRO.md`](docs/06_SPEC_MERCADO_Y_CEREBRO.md).
 
 ## 4. Instalación y ejecución (plug-and-play)
 
-Requisitos: **Python 3.11+** (probado en 3.11 y 3.12) o Docker. Sin claves arranca en **modo demo**.
+Requisitos: **Python 3.11+** (CI en 3.11 y 3.12) o Docker. Sin claves arranca en **modo demo**.
 
 ```bash
-git clone <url-del-repo> && cd finlens
-cp .env.example .env        # opcional: sin claves arranca en modo demo
-./run.sh                    # Windows: run.bat   (si no es ejecutable: bash run.sh)
+git clone https://github.com/piettro/Master-MIAX-Tarea-Bloque5-Multimodales.git finlens && cd finlens
+cp .env.example .env        # opcional: pon OPENROUTER_API_KEY para usar modelos reales
+./run.sh                    # Windows: run.bat
 ```
 
-`run.sh` / `run.bat` crean el entorno virtual, instalan las dependencias y lanzan la app en
-<http://localhost:8501>. **La primera vez tarda unos minutos** (se descargan Streamlit, scikit-learn y los SDK;
-en las pruebas, entre 1 y 4 minutos según la red); las siguientes arrancan en segundos.
-
-**Docker**
+**Docker:**
 
 ```bash
 docker build -t finlens .
-docker run -p 8501:8501 --env-file .env finlens      # sin .env: docker run -p 8501:8501 finlens
+docker run -p 8501:8501 --env-file .env finlens
 ```
 
-**Modo real:** copia `.env.example` a `.env` y rellena `OPENROUTER_API_KEY` (cubre las cinco capacidades) o,
-alternativamente, `ANTHROPIC_API_KEY` y/o `OPENAI_API_KEY`. La elección es **por capacidad**: en `auto` se usa
-OpenRouter si hay clave, si no el proveedor nativo y si no el simulado. Las capacidades sin clave quedan en
-modo demo y la app lo indica; con `DEMO_MODE=true` todo es simulado.
+**Despliegue en AWS** (EC2 + Caddy HTTPS, imagen en ECR, secretos en Secrets Manager, CI/CD con GitHub
+Actions y OIDC, sin claves de AWS en GitHub): ver [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md).
+
+**Variables principales** (todas en [`.env.example`](.env.example)):
 
 | Variable | Para qué |
 |---|---|
-| `DEMO_MODE` | `true` fuerza el modo demo |
-| `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | Claves de los proveedores |
-| `LLM_PROVIDER`, `VISION_PROVIDER`, `STT_PROVIDER`, `TTS_PROVIDER`, `IMAGE_PROVIDER`, `EMBEDDINGS_PROVIDER` | `auto` (por defecto), `openrouter`, `anthropic`, `openai` o `mock` |
-| `OPENROUTER_LLM_MODEL`, `OPENROUTER_VISION_MODEL`, `OPENROUTER_STT_MODEL`, `OPENROUTER_TTS_MODEL`, `OPENROUTER_TTS_VOICE`, `OPENROUTER_IMAGE_MODEL`, `OPENROUTER_EMBEDDINGS_MODEL`, `OPENROUTER_STT_FALLBACK_MODEL` | Modelos de OpenRouter (slugs de su catálogo); embeddings `baai/bge-m3` para preguntar en español sobre informes en inglés |
-| `OPENROUTER_REASONING_EFFORT`, `OPENROUTER_MIN_OUTPUT_TOKENS`, `STT_LANGUAGE` | Esfuerzo de razonamiento y mínimo de `max_tokens` en OpenRouter; idioma de la transcripción (vacío = autodetección) |
-| `LLM_MODEL`, `VISION_MODEL`, `STT_MODEL`, `TTS_MODEL`, `TTS_VOICE`, `IMAGE_MODEL` | Modelos (verificar en la documentación oficial) |
-| `LLM_EFFORT` | Profundidad de razonamiento del LLM (`low`…`max`; vacío = no enviarlo) |
-| `LLM_MIN_OUTPUT_TOKENS` | Mínimo de `max_tokens` solo para Anthropic nativo (el pensamiento comparte presupuesto con la respuesta) |
-| `SEC_USER_AGENT` | User-Agent con contacto que exige la SEC para los fundamentales (`FinLens academic project <email>`) |
-| `LOG_LEVEL` | Nivel del logger `finlens` (nunca registra documentos ni claves) |
-| `LLM_REFUSAL_FALLBACK` | `true` = reintento en otro modelo si Anthropic rechaza la petición (API beta) |
-| `IMAGE_SIZE`, `IMAGE_QUALITY` | Tamaño y calidad de la imagen (solo OpenAI nativo) |
-| `MAX_PDF_CHARS` | Límite de texto ingerido del PDF |
-| `PRICE_*` | Tarifas para estimar el coste (verificar en las páginas oficiales) |
+| `OPENROUTER_API_KEY` | Una sola clave para las 6 capacidades de IA |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | Alternativa: proveedores nativos |
+| `*_PROVIDER` | `auto` (por defecto), `openrouter`, `anthropic`, `openai` o `mock`, por capacidad |
+| `OPENROUTER_*_MODEL`, `OPENROUTER_TTS_VOICE`, `OPENROUTER_STT_FALLBACK_MODEL` | Modelos (slugs del catálogo de OpenRouter) |
+| `OPENROUTER_REASONING_EFFORT`, `OPENROUTER_MIN_OUTPUT_TOKENS`, `STT_LANGUAGE` | Razonamiento, mínimo de tokens, idioma de transcripción |
+| `SEC_USER_AGENT` | Contacto que exige la SEC para descargar fundamentales |
+| `APP_PASSWORD` | Contraseña de la demo pública (vacía = acceso libre en local) |
+| `DEMO_MODE`, `MAX_PDF_CHARS`, `LOG_LEVEL`, `PRICE_*` | Modo demo, límite de entrada, logs y tarifas de respaldo |
 
-**Tests**
+**Calidad:**
 
 ```bash
 pip install -r requirements-dev.txt
-pytest                                       # todos con mocks (cero coste)
-ruff check . && mypy src                     # calidad (también en CI)
-FINLENS_LIVE_TESTS=1 pytest -m live -v -s    # opcional: humo contra las APIs reales (consume crédito)
+pytest                                       # ~720 tests con mocks y datos grabados (cero coste, sin red)
+ruff check . && mypy src                     # también en CI (GitHub Actions, 3.11 y 3.12)
+FINLENS_LIVE_TESTS=1 pytest -m live -v -s    # humo contra las APIs reales (céntimos)
+python scripts/medir.py -n 3 --salida docs/medidas.md   # coste y latencia reales
 ```
-
-Los tests en vivo comprueban primero, **gratis**, que los modelos configurados existen (catálogo público de OpenRouter o API de modelos del proveedor nativo); después hacen una
-llamada mínima por modalidad e imprimen latencia y consumo.
 
 ## 5. Viabilidad técnica y económica
 
-**Coste por análisis** = tokens de entrada × tarifa + tokens de salida × tarifa + minutos de audio × tarifa
-STT + caracteres × tarifa TTS + 1 imagen. Lo calcula `domain/cost.py` y se ve **por paso en la UI**.
+Medido con APIs reales el **7-oct-2026** sobre los casos reales de `samples/` (informe anual 2025 de
+Inditex, gráfico real de ITX.MC y audio): **6 ejecuciones, 0 fallos**. Informe completo en
+[`docs/medidas.md`](docs/medidas.md). El coste es **99 % real** (lo informa OpenRouter en cada respuesta,
+`usage.cost`), no una estimación.
 
-Medición con las APIs reales sobre los casos de `samples/` (la tabla se genera sola):
-
-```bash
-python scripts/medir.py -n 3 --salida docs/medidas.md
-```
-
-| Componente | Uso medio | Coste (USD) |
+| Componente | Uso medio | Coste medio (USD) |
 |---|---|---|
-| LLM (tokens ent./sal.) | **[PENDIENTE: medir]** | **[PENDIENTE]** |
-| STT | **[PENDIENTE]** min | **[PENDIENTE]** |
-| TTS | **[PENDIENTE]** caracteres | **[PENDIENTE]** |
-| Imagen | 1 | **[PENDIENTE]** |
-| **Total** | | **[PENDIENTE]** |
+| LLM (análisis + prompt de ilustración) | 8.849 tokens entrada / 3.092 salida | 0,0446 |
+| Voz a texto | 0,7 min | 0,0001 |
+| Texto a voz | 710 caracteres | 0,0004 |
+| Imagen | 1 ilustración | 0,0150 |
+| Embeddings | 21.395 tokens | 0,0002 |
+| **Total por análisis completo** | | **0,060** |
 
-**Latencias medidas:** ingesta **[PENDIENTE]** s · visión **[PENDIENTE]** s · STT **[PENDIENTE]** s · análisis
-**[PENDIENTE]** s · TTS **[PENDIENTE]** s · imagen **[PENDIENTE]** s · informe en pantalla **[PENDIENTE]** s ·
-total **[PENDIENTE]** s. Visión y STT corren en paralelo, y también TTS e infografía, por lo que el informe
-llega antes que los medios.
+Un análisis **solo con ticker** (sin PDF ni medios) cuesta **≈0,027 USD** y tarda ≈17–20 s (medido con
+AAPL y BTC: 11/11 cifras verificadas en ambos).
 
-> **Tarifas de referencia usadas por el código** (editables, USD, **a verificar** en las páginas oficiales antes
-> de citarlas): LLM 2 / 10 por millón de tokens (entrada / salida), STT 0,006 por minuto, TTS 15 por millón de
-> caracteres y 0,04 por imagen. Con modelos que razonan, los tokens de pensamiento se facturan como salida, así
-> que el coste real puede quedar por encima de una estimación ingenua: de ahí la importancia de medir.
+| Latencia | Media | Máx. |
+|---|---|---|
+| Nota en pantalla (ingesta → verificación) | **21,9 s** | 24,9 s |
+| Todo, con audio e infografía | **31,4 s** | 35,7 s |
+| Análisis LLM | 13,9 s | 16,8 s |
+| Lectura del gráfico | 4,8 s | 5,5 s |
+| Transcripción (80 s de audio) | 3,7 s | 7,0 s |
 
-**Palancas de coste:** recuperación TF-IDF en lugar del PDF completo, límite de texto ingerido
-(`MAX_PDF_CHARS`), caché por *hash*, omitir audio o infografía con las casillas de la UI, `LLM_EFFORT` para
-ajustar la profundidad de razonamiento y modelos pequeños para tareas simples.
+**Lectura:** la UX no es tiempo real, pero sí fluida para el caso de uso (un analista tarda horas en esta
+tarea). El mapa vivo y el render progresivo hacen la espera legible. Para bajar latencia: modelo más rápido
+para el análisis (`gemini-3.8-flash`), *streaming* de la respuesta y caché del índice por documento.
+
+**Palancas de coste:** recuperación (no se envía el PDF entero), límite de entrada, caché por *hash*, omitir
+audio o infografía, esfuerzo de razonamiento acotado y modelos abiertos baratos en TTS, imagen y embeddings.
+
+**Infraestructura de la demo:** EC2 t3.micro + IPv4 + disco ≈ **12 USD/mes** (dentro del presupuesto de
+14 USD/mes de la cuenta AWS del máster).
 
 ## 6. Compliance y privacidad
 
-- **MiFID II / CNMV:** la herramienta **informa, no asesora**. Un **guardrail determinista**
-  (`domain/guardrails.py`) detecta lenguaje de recomendación (compra, venta, ponderación, precio objetivo) en el
-  informe, el chat, el guion de audio y el prompt de la infografía; retira lo infractor, avisa en pantalla y
-  añade un *disclaimer* a cada salida (también hablado en el audio). Es una **heurística por expresiones
-  regulares**, conservadora pero no exhaustiva (ver limitaciones); no sustituye la revisión legal.
-- **RGPD:** el MVP no almacena documentos; el procesamiento es por sesión y la caché vive solo en memoria. En
-  modo real los datos se envían a los proveedores de IA (se avisa en la interfaz). En producción: DPA con cada
-  proveedor y proveedores con residencia en la UE.
-- **AI Act (UE):** transparencia: el contenido se indica como generado por IA y cada afirmación cita su fuente.
-- **Datos bancarios (PSD2):** fuera del MVP; sería requisito si se conectaran cuentas.
+- **MiFID II / CNMV — informa, no asesora:** guardrail determinista (`domain/guardrails.py`) que detecta
+  recomendaciones en español e inglés (imperativo, condicional, *rating*, precio objetivo de un valor…) en la
+  nota, el chat, el guion de audio y el prompt de imagen; **retira solo la frase infractora**, avisa y añade
+  un aviso legal a cada salida (también hablado). Normaliza caracteres invisibles para que no se pueda
+  esquivar. Es una heurística conservadora; no sustituye la revisión legal.
+- **Anti-alucinación:** citas obligatorias + verificación determinista de cifras y del gráfico.
+- **RGPD:** no se almacenan documentos; la caché vive en memoria de la sesión. En modo real los datos van a
+  los proveedores de IA (se avisa en la interfaz). En producción: DPA y proveedores con residencia en la UE.
+- **AI Act:** transparencia: todo se marca como generado por IA y cada afirmación cita su fuente.
+- **Seguridad de la demo:** contraseña, secretos en AWS Secrets Manager, OIDC entre GitHub y AWS, IMDSv2,
+  sin SSH, HTTPS. Riesgo conocido de la industria: clonación de voz (no usamos clonación).
+- **Datos de mercado:** Yahoo Finance es una API no oficial (uso académico); en producción, proveedor con licencia.
 
-*(No es asesoramiento legal; contrastar con el temario del máster.)*
+*(No es asesoramiento legal.)*
 
 ## 7. Monetización
 
-Modelo **SaaS B2B por volumen de análisis**. Los precios son **hipótesis de partida a validar con clientes**,
-no resultados.
+SaaS B2B por volumen de análisis. Coste variable medido: **0,060 USD por análisis completo** (≈0,055 €).
+Precios **hipotéticos** (práctica de máster) con margen bruto sobre el coste de IA:
 
-| Plan | Para quién | Incluye | Precio (hipótesis) |
-|---|---|---|---|
-| **Free** | Probar el producto | Pocos análisis al mes, solo informe, marca de agua | 0 |
-| **Pro** | Analista individual | Análisis ampliados + audio + infografía + chat | **[PENDIENTE: precio por analista y mes]** |
-| **Team / API** | Gestoras, EAFI, brokers | Integración con flujos internos, facturación por uso | **[PENDIENTE: cuota + uso]** |
+| Plan | Para quién | Incluye | Precio | Coste IA máx. | Margen bruto |
+|---|---|---|---|---|---|
+| **Free** | Probar | 5 análisis/mes, solo nota, marca de agua | 0 € | 0,28 € | captación |
+| **Pro** | Analista individual | 150 análisis/mes, audio, infografía, chat, mercado | **49 €/mes** | 8,3 € | **≈83 %** |
+| **Team** | Gestoras, EAFI (5 usuarios) | 1.000 análisis/mes, espacio compartido | **390 €/mes** | 55 € | **≈86 %** |
+| **API** | Brokers (B2B2C) | Pago por uso, integración | **0,25 €/análisis** | 0,055 € | **≈78 %** |
 
-**Margen** = precio − (coste medio por análisis × análisis incluidos). El número máximo de análisis que
-soporta un plan con margen positivo es `precio / coste medio`; el **coste medio** sale de la sección 5.
+El margen real será menor (infraestructura, soporte, datos de mercado con licencia), pero el coste de IA no
+es la restricción: un plan Pro cubre el coste de IA con solo 9 análisis.
 
 ## 8. Pitch técnico
 
-**Problema** → el analista cruza a mano PDF, gráfico y audio. **Solución** → una consulta que los cruza y
-devuelve cifras citadas. **Por qué multimodal** → ningún modelo único cubre recuperación, visión, voz y
-generación; el valor está en orquestarlos y en la trazabilidad. **Arquitectura** → capas separadas, modelos
-intercambiables, modo demo, degradación elegante, compliance por diseño. **Tracción potencial** → equipos de
-research de boutiques y EAFI. **Hoja de ruta** → ver sección 10.
-
-Versión en diapositivas: [`docs/pitch.md`](docs/pitch.md).
+**Problema** → el analista cruza a mano PDF, gráfico, audio y mercado, y la IA genérica inventa cifras.
+**Solución** → una consulta, 6 modelos especializados encadenados y verificación determinista de cada cifra.
+**Por qué multimodal** → ningún modelo único recupera la página exacta, lee el gráfico, transcribe la
+llamada, trae los datos y los contrasta. **Arquitectura** → capas separadas, proveedores intercambiables por
+capacidad, modo demo, degradación elegante, compliance por diseño, CI/CD a AWS. **Viabilidad** → 0,06 USD y
+31 s por análisis medidos. Diapositivas: [`docs/pitch.md`](docs/pitch.md).
 
 ## 9. Capturas
 
-| Informe | Traza de modelos |
+| Nota de análisis | Traza de modelos |
 |---|---|
-| ![Informe con cifras citadas](docs/img/informe.png) | ![Traza de modelos](docs/img/traza.png) |
+| ![Nota con cifras verificadas](docs/img/informe.png) | ![Traza de modelos](docs/img/traza.png) |
 
 | Entradas leídas | Audio e infografía |
 |---|---|
 | ![Entradas leídas](docs/img/entradas.png) | ![Audio e infografía](docs/img/medios.png) |
 
-*(Capturas en modo demo; la infografía simulada es un lienzo liso. **[PENDIENTE: repetirlas con claves reales
-con `python scripts/capturas.py`]**.)*
-
 ## 10. Limitaciones y hoja de ruta
 
-**Limitaciones conocidas**
-
-- El **guardrail** es una heurística: no detecta, por ejemplo, «vendería antes de resultados», «potencial de
-  revalorización del 30 %» ni «yo me saldría del valor». Los falsos positivos se prefieren a los negativos.
-- La **precisión del análisis** (lectura del gráfico, extracción de cifras) depende del modelo y no está
-  evaluada de forma sistemática.
-- Con modelos de transcripción sin duración, la **duración del audio** (y su coste) se estima por tamaño,
-  salvo en WAV.
-- Un PDF **escaneado** (sin texto) no se puede analizar: no hay OCR en el MVP.
-- La **caché** y el historial del chat viven solo en la sesión.
-
-**Hoja de ruta (fuera del alcance del MVP):** vídeo-análisis de webinars, búsqueda multimodal con CLIP,
-conexión a datos de mercado en tiempo real, multiusuario y autenticación, OCR, evaluación sistemática de
-precisión y *embeddings* en lugar de TF-IDF.
+- El **guardrail** es heurístico: puede dejar pasar formulaciones muy indirectas («yo me saldría del valor»).
+- La **verificación de cifras** comprueba que el número está en la fuente citada, no que su interpretación
+  sea correcta.
+- Sin **OCR**: un PDF escaneado no se puede analizar.
+- Los **audios de la demo son sintéticos** (lectura de extractos del propio informe): los de earnings calls
+  reales tienen derechos de autor.
+- Precisión del análisis **no evaluada sistemáticamente** (sería el siguiente paso: conjunto de preguntas con
+  respuesta conocida).
+- **Hoja de ruta:** vídeo-análisis de webinars, OCR, *streaming*, comparación entre empresas, alertas por
+  ticker, multiusuario con autenticación real y evaluación continua.
 
 ## 11. Estructura del repositorio
 
 ```
-finlens/
 ├── app.py                      # entrada de Streamlit (solo UI)
-├── requirements.txt · requirements-dev.txt · pyproject.toml
-├── Dockerfile · .dockerignore · run.sh · run.bat · .env.example
-├── .streamlit/config.toml      # límite de subida, sin telemetría
+├── requirements*.txt · pyproject.toml · Dockerfile · run.sh · run.bat · .env.example
 ├── src/finlens/
 │   ├── config.py               # ajustes por variables de entorno
-│   ├── providers/              # base.py (Protocols), anthropic_provider, openai_provider, openrouter_provider, mock, registry, media
-│   ├── domain/                 # schemas, prompts, ingest, rag, guardrails, grounding, infographic, cost, structured
-│   ├── orchestration/          # pipeline, trace, cache, metrics
-│   └── ui/                     # views (Streamlit), demo_samples
-├── scripts/                    # medir.py (latencia y coste), capturas.py (capturas del README)
-├── samples/                    # casos de prueba (demo ficticio, entradas inválidas) y README
-├── tests/                      # ~200 tests con mocks, guardrails, ingesta, pipeline, UI, arquitectura
-└── docs/                       # arquitectura, pitch, enunciado, plan y capturas (docs/img)
+│   ├── providers/              # Protocols + OpenRouter, Anthropic, OpenAI, mocks, registro por capacidad
+│   ├── sources/                # Yahoo Finance, Hyperliquid, SEC EDGAR (+ mock)
+│   ├── domain/                 # ingesta, RAG híbrido, prompts, esquemas, guardrails, verificación de cifras,
+│   │                           # técnicos, gráfico, contraste visión↔datos, infografía, coste
+│   ├── orchestration/          # pipeline paralelo, traza, caché LRU, métricas
+│   └── ui/                     # tema editorial, mapa de la cadena, cerebro 3D (Three.js), Gantt, vistas
+├── scripts/                    # medir.py, capturas.py, preparar_casos.py
+├── samples/                    # casos reales (Inditex) y entradas inválidas
+├── deploy/                     # CloudFormation (AWS) y script de despliegue
+├── .github/workflows/          # CI (ruff, mypy, pytest) y despliegue a AWS
+├── tests/                      # ~720 tests (mocks y respuestas reales grabadas)
+└── docs/                       # arquitectura, specs, medidas, despliegue, pitch, enunciado
 ```
 
 ## Aviso legal
