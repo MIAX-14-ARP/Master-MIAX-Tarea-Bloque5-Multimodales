@@ -37,11 +37,12 @@ def _resultado(pasos: list[TraceStep]) -> SimpleNamespace:
 
 
 def test_en_reposo_solo_se_encienden_las_entradas_aportadas() -> None:
-    datos = brain.build_brain(build_mock_providers(), aportes={"pdf", "question"})
+    datos = brain.build_brain(build_mock_providers(), aportes={"pdf", "question"}, detalles={"pdf": "1.5 MB"})
     nodos = _nodos(datos)
     assert datos["mode"] == "idle"
-    assert nodos["in_pdf"]["state"] == "on" and nodos["in_pdf"]["value"] == "1.000"
-    assert nodos["in_audio"]["state"] == "off" and nodos["in_audio"]["value"] == "0.000"
+    assert nodos["in_pdf"]["state"] == "on" and nodos["in_pdf"]["value"] == "1.5 MB"  # tamaño, no «1.000»
+    assert nodos["in_question"]["value"] == "aportado"
+    assert nodos["in_audio"]["state"] == "off" and nodos["in_audio"]["value"] == "—"
     assert "in_ticker" not in nodos  # sin datos de mercado no se dibujan sus neuronas
     assert nodos["analysis"]["sub"].startswith("mock")  # proveedor y modelo reales de la capacidad
     assert all(len(e) == 2 and e[0] in nodos and e[1] in nodos for e in datos["edges"])

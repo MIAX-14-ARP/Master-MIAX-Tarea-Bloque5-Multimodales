@@ -6,7 +6,7 @@ maxUploadSize = 30
 gatherUsageStats = false
 
 [client]
-toolbarMode = "viewer"
+toolbarMode = "minimal"
 
 # «Terminal de research editorial»: tinta cálida, hueso y un único acento latón.
 # Los mismos tokens viven en src/finlens/ui/theme.py (CSS inyectado).

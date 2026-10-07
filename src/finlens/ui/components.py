@@ -162,13 +162,22 @@ def pair_checks(figures: Sequence[KeyFigure], checks: Sequence[Any]) -> list[Any
 LONG_FIGURE_CHARS = 14  # cifras literales largas («stable gross margin (+/-50 bps)») en cuerpo menor
 
 
+def figure_size_class(valor: str) -> str:
+    """Tamaño de la cifra según su longitud. Los números nunca se parten («57,768.0» entero en una línea)."""
+    n = len(valor)
+    numerica = n <= LONG_FIGURE_CHARS or sum(c.isdigit() for c in valor) >= n * 0.35
+    if not numerica:
+        return " is-long"
+    return "" if n <= 8 else " is-m" if n <= 11 else " is-s" if n <= 16 else " is-xs"
+
+
 def figures_html(figures: Sequence[KeyFigure], checks: Sequence[Any]) -> str:
     celdas = []
     for f, check in zip(figures, pair_checks(figures, checks), strict=True):
         periodo = f'<div class="fl-fig__p">{esc(f.period)}</div>' if f.period else ""
         celdas.append(
             f'<div class="fl-fig"><div class="fl-fig__n">{esc(f.name)}</div>'
-            f'<div class="fl-fig__v{" is-long" if len(f.value) > LONG_FIGURE_CHARS else ""}">{esc(f.value)}</div>{periodo}'
+            f'<div class="fl-fig__v{figure_size_class(f.value)}">{esc(f.value)}</div>{periodo}'
             f'<div class="fl-fig__foot">{stamp(check)}{chips(f.citations)}</div></div>'
         )
     return f'<div class="fl-figs">{"".join(celdas)}</div>'
@@ -273,6 +282,26 @@ def kv_grid(pares: Sequence[tuple[str, str]]) -> str:
     """Rejilla de indicadores (clave pequeña en mono, valor tabular)."""
     celdas = "".join(
         f'<div class="fl-kv"><div class="fl-kv__k">{esc(k)}</div>'
-        f'<div class="fl-kv__v{" is-list" if " · " in v else ""}">{esc(v)}</div></div>' for k, v in pares
+        f'<div class="fl-kv__v{" is-list" if " · " in v else " is-long" if len(v) > 16 else ""}">{esc(v)}</div></div>'
+        for k, v in pares
     )
     return f'<div class="fl-kvs">{celdas}</div>'
+
+
+_FUENTE_CORTA = {"documento": "PDF", "mercado": "mercado", "sec": "SEC", "grafico": "gráfico", "audio": "audio"}
+
+
+def verification_summary(figures: Sequence[KeyFigure], checks: Sequence[Any]) -> str:
+    """«9/9 verificadas en sus fuentes (PDF 3 · mercado 4 · SEC 2)»: no dice «en el PDF» si no lo es."""
+    por_fuente: dict[str, int] = {}
+    verificadas = 0
+    for f, check in zip(figures, pair_checks(figures, checks), strict=True):
+        if getattr(check, "status", "") != "verificada":
+            continue
+        verificadas += 1
+        origen = f.citations[0].origin if f.citations else ""
+        por_fuente[_FUENTE_CORTA.get(origen, origen)] = por_fuente.get(_FUENTE_CORTA.get(origen, origen), 0) + 1
+    if list(por_fuente) == ["PDF"]:
+        return f"{verificadas}/{len(figures)} verificadas en el PDF"
+    desglose = " · ".join(f"{k} {v}" for k, v in por_fuente.items())
+    return f"{verificadas}/{len(figures)} verificadas en sus fuentes" + (f" ({desglose})" if desglose else "")
