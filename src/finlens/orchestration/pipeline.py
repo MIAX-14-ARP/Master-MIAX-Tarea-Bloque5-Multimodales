@@ -28,6 +28,7 @@ from finlens.domain.guardrails import (
 from finlens.domain.infographic import compose_infographic
 from finlens.domain.ingest import DEFAULT_MAX_CHARS, IngestedDocument, IngestError, ingest_pdf
 from finlens.domain.market_chart import render_market_chart
+from finlens.domain.media_checks import check_audio, check_image
 from finlens.domain.prompts import (
     ANALYST_SYSTEM,
     CHAT_SYSTEM,
@@ -293,6 +294,8 @@ def _step_ingest(pdf: bytes, max_chars: int) -> _Done[tuple[IngestedDocument, Hy
 def _step_vision(
     providers: Providers, tariffs: Tariffs, chart: bytes, mime: str
 ) -> _Done[ChartReading]:
+    if motivo := check_image(chart):
+        raise StepError(motivo)
     resultado = ask_structured_vision(providers.vision, chart, mime, VISION_PROMPT, ChartReading)
     coste = sum(cost.text_result_cost(tariffs, c) for c in resultado.calls)
     return _Done(
@@ -303,6 +306,8 @@ def _step_vision(
 
 def _step_stt(providers: Providers, tariffs: Tariffs, inp: AnalysisInput) -> _Done[str]:
     assert inp.audio is not None
+    if motivo := check_audio(inp.audio, inp.audio_name):  # antes de la llamada de pago
+        raise StepError(motivo)
     resultado = providers.stt.transcribe(inp.audio, inp.audio_name)
     if not resultado.text.strip():
         raise StepError("No se detectó voz en el audio.")
