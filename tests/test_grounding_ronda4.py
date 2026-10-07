@@ -44,6 +44,10 @@ TECH = replace(
         ("Último cierre", "53,82", "verificada"),
         ("Cierre", "61,7", "no_encontrada"),  # el RSI no es un cierre
         ("Cotización", "53,8", "verificada"),
+        # Nombres pegados al periodo («RSI14», «EMA20») también se reconocen (caso real BTC: EMA20 casaba con el cierre).
+        ("RSI14", "54", "no_encontrada"),
+        ("RSI14", "61,7", "verificada"),
+        ("EMA20", "53,82", "no_encontrada"),
     ],
 )
 def test_mercado_se_compara_solo_con_el_indicador_citado(nombre: str, valor: str, esperado: str) -> None:

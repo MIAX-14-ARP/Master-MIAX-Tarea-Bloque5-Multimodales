@@ -161,3 +161,28 @@ def test_demo_coherente_serie_alcista_y_contraste_alto(completo) -> None:
     r, _ = completo
     assert r.market is not None and r.market.technicals.trend == "alcista"
     assert r.market.chart_check is not None and r.market.chart_check.agreement_score >= 0.8
+
+
+def test_origen_del_coste_real_estimado_o_mixto() -> None:
+    from finlens.export.report_pdf import _origen_coste
+    from finlens.orchestration.trace import TraceStep
+
+    real = TraceStep("Análisis (LLM)", "m", 1.0, cost_usd=0.03, cost_real=True)
+    estimado = TraceStep("Resumen en audio", "m", 1.0, cost_usd=0.03)
+    assert _origen_coste([real]).startswith("real")
+    assert _origen_coste([estimado]) == "estimado con tarifas"
+    assert _origen_coste([real, estimado]) == "50% real, resto estimado"
+    assert _origen_coste([]) == "sin coste"
+
+
+def test_solo_ticker_no_dice_grafico_aportado() -> None:
+    """Con ticker y sin gráfico subido, `r.chart` es la lectura del generado: no es un gráfico «aportado»."""
+    from types import SimpleNamespace
+
+    from finlens.export.report_pdf import _grafico_aportado
+
+    lectura = object()
+    assert _grafico_aportado(SimpleNamespace(chart=lectura, chart_generated=lectura)) is None
+    otra = object()
+    assert _grafico_aportado(SimpleNamespace(chart=otra, chart_generated=lectura)) is otra
+    assert _grafico_aportado(SimpleNamespace(chart=None, chart_generated=lectura)) is None

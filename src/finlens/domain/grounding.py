@@ -345,11 +345,11 @@ def _sin_acentos(texto: str) -> str:
 
 _NOMBRE_INDICADOR = re.compile(r"\b(rsi|sma|ema|ma|mm)\s*\(?\s*\d+\s*\)?", re.IGNORECASE)
 _ASOCIACION = (  # (regex sobre nombre+valor sin acentos, claves de objetivo)
-    (r"\brsi\b", {"rsi"}),
+    (r"\brsi(?:\s*\(?\s*\d+\s*\)?)?(?![a-z])", {"rsi"}),  # «RSI», «RSI14», «RSI (14)»
     (r"\bsma\s*\(?\s*50\b|media.{0,20}\b50\b", {"sma50"}),
     (r"\bsma\s*\(?\s*20\b|media.{0,20}\b20\b", {"sma20"}),
     (r"\bsma\b|media movil|moving average", {"sma20", "sma50"}),
-    (r"\bema\b", {"ema"}),
+    (r"\bema(?:\s*\(?\s*\d+\s*\)?)?(?![a-z])", {"ema"}),  # «EMA», «EMA20», «EMA (20)»
     (r"cierre|close|ultimo precio|precio actual|cotizacion", {"cierre"}),
     (r"rentabilidad|retorno|return|variacion", {"rentabilidad"}),
     (r"volatilidad|volatility", {"volatilidad"}),

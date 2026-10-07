@@ -287,7 +287,7 @@ a {{ color: var(--brass); }}
 .fl-fig__foot {{ display:flex; gap:var(--s2); align-items:center; flex-wrap:wrap; margin-top:var(--s3); }}
 
 .fl-stamp {{ display:inline-block; font:700 10px/1 var(--f-mono); letter-spacing:.16em; text-transform:uppercase;
-  padding:6px 8px 5px; border:1.5px solid currentColor; white-space:nowrap; animation:fl-stamp .3s ease-out both; }}
+  padding:6px 8px 5px; border:1.5px solid currentColor; white-space:normal; overflow-wrap:anywhere; max-width:100%; line-height:1.35; animation:fl-stamp .3s ease-out both; }}
 .fl-stamp.v {{ color:var(--up); box-shadow:inset 0 0 0 1px rgba(108,195,138,.25); }}
 .fl-stamp.x {{ color:var(--down); }}
 .fl-stamp.s {{ color:var(--paper-dim); border-style:dashed; }}

@@ -29,8 +29,8 @@ MARGEN_MM = 18
 ANCHO_UTIL_MM = 210 - 2 * MARGEN_MM
 MAX_TRANSCRIPCION = 1500
 MAX_ALTO_IMAGEN_MM = 150
-ESPACIO_MIN_TITULO_MM = 50  # si queda menos hueco, el título de sección salta de página
 ESPACIO_MIN_TABLA_MM = 45
+ESPACIO_MIN_TITULO_MM = ESPACIO_MIN_TABLA_MM + 15  # título + arranque de tabla: nunca huérfano
 MAX_CELDA = 450  # una celda de tabla no puede ocupar más de una página
 TAM_CUERPO = 9.5
 TAM_TABLA = 8.5
@@ -263,7 +263,7 @@ def _portada(pdf: _Pdf, r: AnalysisResult, media: MediaResult | None) -> None:
     materiales: list[str] = []
     if r.document.n_pages:
         materiales.append(f"Informe PDF: {r.document.n_pages} páginas")
-    if r.chart is not None:
+    if _grafico_aportado(r) is not None:
         materiales.append("Gráfico de velas aportado")
     if r.transcript is not None:
         materiales.append("Audio transcrito")
@@ -281,11 +281,28 @@ def _portada(pdf: _Pdf, r: AnalysisResult, media: MediaResult | None) -> None:
     segundos = r.total_seconds + (media.total_seconds if media else 0.0)
     pdf.tabla(("Dato", "Detalle"), [
         ("Materiales", chr(10).join(materiales) or "—"),
-        ("Coste total", f"{total_cost(pasos):.4f} USD (estimado)"),
+        ("Coste total", f"{total_cost(pasos):.4f} USD ({_origen_coste(pasos)})"),
         ("Tiempo", f"{_num(segundos, 1)} s"),
     ], (1.1, 5))
     pdf.subtitulo("Modelos utilizados")
     pdf.tabla(("Modelo", "Pasos"), [(modelo, ", ".join(pp)) for modelo, pp in por_modelo.items()], (2, 5))
+
+
+def _grafico_aportado(r: AnalysisResult) -> Any:
+    """Lectura del gráfico que subió el usuario, o None (con ticker, `r.chart` puede ser la del generado)."""
+    generado = getattr(r, "chart_generated", None)
+    return None if r.chart is None or r.chart is generado else r.chart
+
+
+def _origen_coste(pasos: Sequence[TraceStep]) -> str:
+    """«real», «estimado» o «N % real»: qué parte del coste informó el proveedor."""
+    total = total_cost(pasos)
+    if total <= 0:
+        return "sin coste"
+    real = sum(p.cost_usd for p in pasos if getattr(p, "cost_real", False)) / total
+    if real >= 0.995:
+        return "real, informado por el proveedor"
+    return "estimado con tarifas" if real <= 0.005 else f"{real:.0%} real, resto estimado"
 
 
 def _estado(fc: Any) -> tuple[str, Color, str]:
@@ -325,7 +342,7 @@ def _cifras(pdf: _Pdf, r: AnalysisResult) -> None:
 
 def _lectura_grafico(pdf: _Pdf, r: AnalysisResult) -> None:
     m = r.market
-    lecturas = [("Lectura del gráfico aportado", r.chart),
+    lecturas = [("Lectura del gráfico aportado", _grafico_aportado(r)),
                 ("Lectura del gráfico generado con los datos", r.chart_generated)]
     cr = r.report.chart_reading
     if not any(lec for _, lec in lecturas) and cr is None and not (m and m.chart_png):
@@ -432,7 +449,7 @@ def _anexo(pdf: _Pdf, r: AnalysisResult, media: MediaResult | None) -> None:
     pdf.tabla(("Paso", "Modelo", "s", "USD", "OK"), [
         (p.step, p.model, _num(p.seconds, 1), f"{p.cost_usd:.4f}", "sí" if p.ok else "NO") for p in pasos
     ], (3.6, 2.6, 0.8, 1, 0.7), lambda i, j: ROJO if j == 4 and not pasos[i].ok else None)
-    pdf.parrafo(f"Total: {total_cost(pasos):.4f} USD (estimado) · "
+    pdf.parrafo(f"Total: {total_cost(pasos):.4f} USD ({_origen_coste(pasos)}) · "
                 f"{_num(sum(p.seconds for p in pasos), 1)} s de cómputo.", tam=8.5, color=GRIS)
     avisos = list(r.warnings) + (list(media.warnings) if media else [])
     if avisos:
