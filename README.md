@@ -1,5 +1,7 @@
 # FinLens – Research financiero multimodal con cifras verificadas
 
+[![CI](https://github.com/piettro/Master-MIAX-Tarea-Bloque5-Multimodales/actions/workflows/ci.yml/badge.svg)](https://github.com/piettro/Master-MIAX-Tarea-Bloque5-Multimodales/actions/workflows/ci.yml)
+
 > Taller B5-T4 · Máster en IA y computación cuantitativa aplicada a mercados financieros (Instituto BME)
 > Equipo: **Piettro Rodrigues, Alonso y Raúl Rodríguez** · Entrega: 8 de octubre de 2026
 >
@@ -7,8 +9,28 @@
 
 **Demo desplegada (AWS):** <https://108-128-114-211.sslip.io> (protegida con contraseña: cada análisis gasta
 crédito real; pídela al equipo) · **Vídeo de la demo (3–5 min):** **[PENDIENTE: enlace]**
+**Propuesta de MVP (PDF, punto 4.1 del enunciado):** [`docs/propuesta_mvpFinlens.pdf`](docs/propuesta_mvpFinlens.pdf)
+· **Pitch:** [`docs/pitch.pdf`](docs/pitch.pdf) · **Informe de costes y latencias:** [`docs/medidas.md`](docs/medidas.md)
 
-![Pantalla principal de FinLens](docs/img/home.png)
+![Pantalla principal de FinLens](docs/img/readme/home.png)
+
+**En una frase:** FinLens cruza el informe anual (PDF), el gráfico, el audio de la conferencia y los datos de
+mercado de una cotizada en una nota de research donde **cada cifra cita su fuente y la verifica el código**,
+no el LLM. Cuesta **0,06 USD** y tarda **≈31 s** por análisis completo (medido con APIs reales).
+
+### Qué pide el enunciado y dónde está
+
+| Enunciado del taller | Dónde verlo |
+|---|---|
+| 4.1 Esquema del problema, público (B2B/B2B2C) y propuesta de valor multimodal | [§1](#1-problema-y-propuesta-de-valor) |
+| 4.1 Viabilidad: costes de inferencia y consumo de APIs | [§5](#5-viabilidad-técnica-y-económica) y [`docs/medidas.md`](docs/medidas.md) |
+| 4.1 Latencias para una experiencia fluida | [§5](#5-viabilidad-técnica-y-económica) |
+| 4.1 Marco regulatorio: compliance y privacidad (incluidos datos bancarios) | [§6](#6-compliance-y-privacidad) |
+| 4.1 Modelo de monetización | [§7](#7-monetización) |
+| 4.2 Diversidad de modalidades y orquestación de varios modelos | [§2](#2-qué-hace-demo-en-30-segundos) y [§3](#3-arquitectura-y-flujo-de-datos-multimodal) |
+| 4.3 MVP operativo, UI/UX, robustez y plug-and-play | [§4](#4-instalación-y-ejecución-plug-and-play) y [§9](#9-capturas) |
+| 4.4 README con capturas, diagrama de flujo y arquitectura; pitch; modularidad | [§3](#3-arquitectura-y-flujo-de-datos-multimodal), [§8](#8-pitch-técnico), [§9](#9-capturas) |
+| 5. Entregables: repositorio y demo funcional | Este repositorio · demo (enlace arriba) · vídeo **[PENDIENTE]** |
 
 ## 1. Problema y propuesta de valor
 
@@ -157,7 +179,7 @@ Actions y OIDC, sin claves de AWS en GitHub): ver [`docs/DESPLIEGUE.md`](docs/DE
 
 ```bash
 pip install -r requirements-dev.txt
-pytest                                       # ~720 tests con mocks y datos grabados (cero coste, sin red)
+pytest                                       # más de 800 tests con mocks y datos grabados (cero coste, sin red)
 ruff check . && mypy src                     # también en CI (GitHub Actions, 3.11 y 3.12)
 FINLENS_LIVE_TESTS=1 pytest -m live -v -s    # humo contra las APIs reales (céntimos)
 python scripts/medir.py -n 3 --salida docs/medidas.md   # coste y latencia reales
@@ -182,17 +204,54 @@ Inditex, gráfico real de ITX.MC y audio): **6 ejecuciones, 0 fallos**. Informe 
 Un análisis **solo con ticker** (sin PDF ni medios) cuesta **≈0,027 USD** y tarda ≈17–20 s (medido con
 AAPL y BTC: 11/11 cifras verificadas en ambos).
 
-| Latencia | Media | Máx. |
-|---|---|---|
-| Nota en pantalla (ingesta → verificación) | **21,9 s** | 24,9 s |
-| Todo, con audio e infografía | **31,4 s** | 35,7 s |
-| Análisis LLM | 13,9 s | 16,8 s |
-| Lectura del gráfico | 4,8 s | 5,5 s |
-| Transcripción (80 s de audio) | 3,7 s | 7,0 s |
+**Latencia: objetivo y resultado.** FinLens no es un chat en tiempo real, es una herramienta de research: un
+analista tarda horas en cruzar estas fuentes a mano. Por eso proponemos como **objetivo del MVP** que la nota
+esté en pantalla en **≤ 30 s** y que el análisis completo (con audio e infografía) termine en **≤ 60 s**, con
+render progresivo para que la espera sea legible (el mapa de la cadena y la traza muestran cada paso en vivo).
 
-**Lectura:** la UX no es tiempo real, pero sí fluida para el caso de uso (un analista tarda horas en esta
-tarea). El mapa vivo y el render progresivo hacen la espera legible. Para bajar latencia: modelo más rápido
-para el análisis (`gemini-3.8-flash`), *streaming* de la respuesta y caché del índice por documento.
+| Latencia (6 ejecuciones) | Objetivo | Media medida | Máx. | ¿Cumple? |
+|---|---|---|---|---|
+| Nota en pantalla (ingesta → verificación) | ≤ 30 s | **21,9 s** | 24,9 s | ✅ |
+| Todo, con audio e infografía | ≤ 60 s | **31,4 s** | 35,7 s | ✅ |
+| Análisis LLM (el paso más lento) | — | 13,9 s | 16,8 s | — |
+| Lectura del gráfico | — | 4,8 s | 5,5 s | — |
+| Transcripción (80 s de audio) | — | 3,7 s | 7,0 s | — |
+
+Para bajar la latencia: modelo más rápido para el análisis (`gemini-3.8-flash`), *streaming* de la respuesta y
+caché del índice por documento.
+
+<details>
+<summary><b>Informe de costes y latencias completo</b> (mismo contenido que <a href="docs/medidas.md"><code>docs/medidas.md</code></a>)</summary>
+
+**Modelos medidos:** `anthropic/claude-sonnet-5.5` (análisis y prompt de ilustración),
+`google/gemini-3.8-flash` (visión), `openai/whisper-large-v3-turbo` (voz a texto), `hexgrad/kokoro-82m`
+(texto a voz), `black-forest-labs/flux.2-klein-4b` (imagen) y `baai/bge-m3` (embeddings), todos vía OpenRouter.
+
+**Origen del coste:** 99 % **real** (informado por el proveedor en cada respuesta, `usage.cost` de OpenRouter);
+el 1 % restante se **estima** con tarifas de respaldo (USD): LLM 2,0 / 10,0 por millón de tokens
+(entrada / salida), STT 0,006 por minuto, TTS 0,62 por millón de caracteres, imagen 0,04 por unidad. Son
+orientativas y deben verificarse en las páginas oficiales.
+
+| Paso | Modelo | Media (s) | Máx. (s) | Fallos |
+|---|---|---|---|---|
+| Ingesta e índice | pypdf + TF-IDF | 0,28 | 0,30 | 0 |
+| Índice semántico (embeddings) | baai/bge-m3 | 4,21 | 9,21 | 0 |
+| Lectura del gráfico | google/gemini-3.8-flash | 4,77 | 5,50 | 0 |
+| Transcripción de audio | openai/whisper-large-v3-turbo | 3,66 | 6,98 | 0 |
+| Recuperación | TF-IDF + bge-m3 | 1,06 | 3,69 | 0 |
+| Análisis (LLM) | anthropic/claude-sonnet-5.5 | 13,86 | 16,80 | 0 |
+| Guardrails de compliance | reglas deterministas | 0,00 | 0,00 | 0 |
+| Verificación de cifras | reglas deterministas | 0,00 | 0,00 | 0 |
+| Resumen en audio | hexgrad/kokoro-82m | 1,75 | 2,47 | 0 |
+| Prompt de infografía | anthropic/claude-sonnet-5.5 | 4,76 | 5,15 | 0 |
+| Generación de infografía | black-forest-labs/flux.2-klein-4b | 4,60 | 5,46 | 0 |
+| Composición de infografía | flux.2-klein-4b + composición Python | 0,22 | 0,24 | 0 |
+
+Visión y transcripción corren en paralelo, y también audio e infografía, por lo que los tiempos por paso
+**no suman** el total. Para reproducir la medición (consume crédito, ≈0,4 USD con 6 ejecuciones):
+`python scripts/medir.py -n 3 --salida docs/medidas.md`.
+
+</details>
 
 **Palancas de coste:** recuperación (no se envía el PDF entero), límite de entrada, caché por *hash*, omitir
 audio o infografía, esfuerzo de razonamiento acotado y modelos abiertos baratos en TTS, imagen y embeddings.
@@ -234,34 +293,51 @@ Precios **hipotéticos** (práctica de máster) con margen bruto sobre el coste 
 | **Team** | Gestoras, EAFI (5 usuarios) | 1.000 análisis/mes, espacio compartido | **390 €/mes** | 55 € | **≈86 %** |
 | **API** | Brokers (B2B2C) | Pago por uso, integración | **0,25 €/análisis** | 0,055 € | **≈78 %** |
 
-El margen real será menor (infraestructura, soporte, datos de mercado con licencia), pero el coste de IA no
-es la restricción: un plan Pro cubre el coste de IA con solo 9 análisis.
+*(Conversión: 1 USD ≈ 0,92 €. Margen bruto = (precio − coste de IA) / precio, con el plan usado al máximo de
+su cupo.)* El margen real será menor (infraestructura, soporte, datos de mercado con licencia), pero el coste
+de IA no es la restricción: el de un plan Pro **completo** (150 análisis) son 8,3 €, apenas el 17 % de su precio.
 
 ## 8. Pitch técnico
 
-**Problema** → el analista cruza a mano PDF, gráfico, audio y mercado, y la IA genérica inventa cifras.
-**Solución** → una consulta, 6 modelos especializados encadenados y verificación determinista de cada cifra.
-**Por qué multimodal** → ningún modelo único recupera la página exacta, lee el gráfico, transcribe la
-llamada, trae los datos y los contrasta. **Arquitectura** → capas separadas, proveedores intercambiables por
-capacidad, modo demo, degradación elegante, compliance por diseño, CI/CD a AWS. **Viabilidad** → 0,06 USD y
-31 s por análisis medidos. Diapositivas: [`docs/pitch.pdf`](docs/pitch.pdf) (texto fuente en
-[`docs/pitch.md`](docs/pitch.md); se regenera con `python scripts/pitch_pdf.py`).
+Seis diapositivas, en **[`docs/pitch.pdf`](docs/pitch.pdf)** (texto fuente en [`docs/pitch.md`](docs/pitch.md); se
+regenera con `python scripts/pitch_pdf.py --miniaturas`):
+
+![Las seis diapositivas del pitch técnico](docs/img/readme/pitch.png)
+
+| # | Diapositiva | Mensaje |
+|---|---|---|
+| 1 | **El problema** | El analista cruza a mano cuatro fuentes que nada conecta (PDF, gráfico, audio, mercado) y la IA genérica **inventa cifras**. Público B2B: analistas, EAFI, gestoras boutique. |
+| 2 | **La solución** | Una nota de research **citada y verificada en ≈30 s**, desde un ticker o desde el informe, el gráfico y el audio. |
+| 3 | **Por qué multimodal** | Seis modelos especializados encadenados más verificación determinista en Python. Diferencial: **«La IA vio · los datos dicen»** y cifras verificadas. |
+| 4 | **Arquitectura** | Capas separadas, proveedores intercambiables por capacidad, modo demo, degradación elegante, más de 800 tests y CI/CD a AWS. |
+| 5 | **Viabilidad y negocio** | **0,060 USD** por análisis, nota en 21,9 s, todo en 31,4 s; compliance por diseño; planes de 49 €, 390 € y 0,25 €/análisis. |
+| 6 | **Tracción y hoja de ruta** | Equipos de research de boutiques y EAFI; vídeo-análisis, OCR, comparación entre empresas, alertas por ticker. |
 
 ## 9. Capturas
 
-Hechas con **APIs reales** (OpenRouter, Yahoo, SEC) sobre el caso de `samples/01_inditex` más el ticker `ITX.MC`.
+Recorrido por una ejecución real: **APIs reales** (OpenRouter, Yahoo Finance, SEC) sobre el caso
+`samples/01_inditex` más el ticker `ITX.MC`. Las capturas completas, sin recortar, están en [`docs/img/`](docs/img).
 
-| Nota de análisis: 11/11 cifras verificadas | La IA vio · los datos dicen |
-|---|---|
-| ![Nota con cifras verificadas](docs/img/informe.png) | ![Contraste visión-datos](docs/img/mercado.png) |
+**1 · Nota de análisis: cada cifra con su fuente y su sello de verificación** (11/11 verificadas)
 
-| Audio e infografía (cifras dibujadas por Python) | Traza de modelos |
-|---|---|
-| ![Audio e infografía](docs/img/medios.png) | ![Traza de modelos](docs/img/traza.png) |
+![Nota de análisis con cifras verificadas](docs/img/readme/nota.png)
 
-| Cadena de modelos en vivo | Entradas leídas |
-|---|---|
-| ![Cadena de modelos](docs/img/cerebro.png) | ![Entradas leídas](docs/img/entradas.png) |
+**2 · «La IA vio · los datos dicen»: el gráfico se contrasta con la serie real de precios** (9 de 9 afirmaciones
+de la visión confirmadas)
+
+![Contraste entre la lectura de la visión y los datos de mercado](docs/img/readme/contraste.png)
+
+**3 · Audio e infografía: la ilustración la hace un modelo de difusión; las cifras las dibuja Python**
+
+![Resumen en audio e infografía](docs/img/readme/infografia.png)
+
+**4 · La cadena de modelos en vivo (el «cerebro»): qué entra, qué modelo actúa, en qué orden y en paralelo**
+
+![Cadena de modelos en vivo](docs/img/readme/cerebro.png)
+
+**5 · Traza de modelos: tiempo, tokens y coste real por paso** (18 pasos, 13 motores, 0,0651 USD en esta ejecución)
+
+![Traza de modelos con diagrama de Gantt y coste por paso](docs/img/readme/traza.png)
 
 ## 10. Limitaciones y hoja de ruta
 
@@ -293,7 +369,7 @@ Hechas con **APIs reales** (OpenRouter, Yahoo, SEC) sobre el caso de `samples/01
 ├── samples/                    # casos reales (Inditex) y entradas inválidas
 ├── deploy/                     # CloudFormation (AWS) y script de despliegue
 ├── .github/workflows/          # CI (ruff, mypy, pytest) y despliegue a AWS
-├── tests/                      # ~720 tests (mocks y respuestas reales grabadas)
+├── tests/                      # más de 800 tests (mocks y respuestas reales grabadas)
 └── docs/                       # arquitectura, specs, medidas, despliegue, pitch, enunciado
 ```
 

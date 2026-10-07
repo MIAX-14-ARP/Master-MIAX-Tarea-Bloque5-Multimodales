@@ -45,7 +45,7 @@ página, la SEC o los indicadores.
 
 Capas separadas y proveedores **intercambiables por capacidad**: `providers/` (IA) · `sources/` (datos) ·
 `domain/` (negocio) · `orchestration/` · `ui/`; un test hace cumplir las fronteras. Ramas en paralelo, render
-progresivo, degradación elegante, modo demo sin claves. ~720 tests, CI en GitHub Actions y despliegue continuo
+progresivo, degradación elegante, modo demo sin claves. Más de 800 tests, CI en GitHub Actions y despliegue continuo
 a AWS (ECR + EC2, OIDC, Secrets Manager).
 
 ## 5. Viabilidad y negocio
