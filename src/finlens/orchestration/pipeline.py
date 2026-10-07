@@ -589,6 +589,14 @@ def analyze(
     if retriever is not None and indice is not None:
         retriever = retriever.with_embeddings(indice.vectors, providers.embeddings)
 
+    if not usa_pdf and market is None and fundamentals is None and chart is None and transcript is None:
+        # Solo ticker y la fuente falló: sin ningún material el LLM inventaría el informe.
+        motivo = next(
+            (t.note for t in trace if not t.ok and t.step.startswith(("Datos de mercado", "Indicadores técnicos"))),
+            "no hay datos disponibles",
+        )
+        raise PipelineError(f"No se pudieron obtener datos de mercado para «{ticker}»: {motivo}", trace)
+
     question = _resolve_question(inp, transcript)
     if inp.audio_role == "pregunta" and inp.audio is not None and transcript is None and not inp.question.strip():
         warnings.append("No se pudo leer la pregunta por voz: se usa la pregunta por defecto.")

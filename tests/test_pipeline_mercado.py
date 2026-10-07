@@ -252,3 +252,44 @@ def test_cifra_con_documento_y_sec_se_verifica_con_cualquiera() -> None:
     )
     (r,) = check_figures(AnalysisReport(summary="r", spoken_summary="r", key_figures=[cifra]), doc, fundamentals=fund)
     assert r.status == "verificada" and r.page is None
+
+
+def test_solo_ticker_sin_ningun_dato_detiene_el_analisis_sin_llamar_al_llm() -> None:
+    llamadas: list[str] = []
+
+    class LlmEspia(type(build_mock_providers().llm)):
+        def complete(self, system, messages, max_tokens=2048):
+            llamadas.append("llm")
+            return super().complete(system, messages, max_tokens)
+
+    class Rota:
+        def fetch_prices(self, symbol, rango="6mo"):
+            raise SourceError(f"Yahoo Finance no conoce el símbolo «{symbol}».")
+
+    class SecVacia:
+        def fetch_fundamentals(self, ticker):
+            return None
+
+    fuentes = MarketSources(Rota(), Rota(), MockDerivatives(), SecVacia(), demo=True)
+    providers = replace(build_mock_providers(), llm=LlmEspia())
+    with pytest.raises(PipelineError) as exc:
+        analyze(providers, TARIFAS, AnalysisInput(pdf=b"", ticker="XXXX"), sources=fuentes)
+    assert exc.value.message.startswith("No se pudieron obtener datos de mercado para «XXXX»")
+    assert "no conoce el símbolo" in exc.value.message
+    assert [s.step for s in exc.value.trace if not s.ok] == ["Datos de mercado"] and llamadas == []
+
+
+def test_con_pdf_o_audio_el_fallo_de_mercado_sigue_siendo_degradacion() -> None:
+    from tests.test_logging import pdf_minimo
+
+    class Rota:
+        def fetch_prices(self, symbol, rango="6mo"):
+            raise SourceError("sin red")
+
+    class SecVacia:
+        def fetch_fundamentals(self, ticker):
+            return None
+
+    fuentes = MarketSources(Rota(), Rota(), MockDerivatives(), SecVacia(), demo=True)
+    r = analyze(build_mock_providers(), TARIFAS, AnalysisInput(pdf=pdf_minimo(), ticker="XXXX"), sources=fuentes)
+    assert r.market is None and any("sin red" in w for w in r.warnings)
