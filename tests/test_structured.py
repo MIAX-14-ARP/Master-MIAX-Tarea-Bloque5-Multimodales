@@ -6,7 +6,7 @@ import pytest
 
 from finlens.domain.schemas import ChartReading, InfographicPrompt
 from finlens.domain.structured import StructuredOutputError, ask_structured, ask_structured_vision
-from finlens.providers.base import Message, TextResult
+from finlens.providers.base import Message, ProviderError, TextResult
 from finlens.providers.mock import MockLLM, MockVision
 from finlens.ui.demo_samples import demo_chart_png
 
@@ -108,3 +108,36 @@ def test_vision_estructurada_reintenta_con_la_correccion_en_el_prompt() -> None:
 def test_vision_estructurada_degrada_tras_dos_fallos() -> None:
     with pytest.raises(StructuredOutputError, match="tras 2 intentos"):
         ask_structured_vision(VisionGuionizada("x", "y"), b"img", "image/png", "d", ChartReading)
+
+
+def test_el_error_estructurado_acumula_el_coste_de_los_intentos() -> None:
+    from finlens.domain.structured import StructuredOutputError
+
+    class Malo:
+        def complete(self, system, messages, max_tokens=2048):
+            return TextResult("no es json", "m", 1, 1, cost_usd=0.02)
+
+    with pytest.raises(StructuredOutputError) as exc:
+        ask_structured(Malo(), "s", [Message("user", "x")], ChartReading)
+    assert exc.value.cost_usd == pytest.approx(0.04) and len(exc.value.calls) == 2
+
+
+def test_si_el_reintento_falla_por_proveedor_no_se_pierde_el_primer_coste() -> None:
+    class Cae:
+        n = 0
+
+        def complete(self, system, messages, max_tokens=2048):
+            Cae.n += 1
+            if Cae.n == 1:
+                return TextResult("no es json", "m", 1, 1, cost_usd=0.02)
+            raise ProviderError("cae", 0.01)
+
+    with pytest.raises(ProviderError) as exc:
+        ask_structured(Cae(), "s", [Message("user", "x")], ChartReading)
+    assert exc.value.cost_usd == pytest.approx(0.03)
+
+
+def test_sin_costes_reales_cost_usd_es_none() -> None:
+    from finlens.domain.structured import StructuredOutputError
+
+    assert StructuredOutputError("x", (TextResult("a", "m"),)).cost_usd is None

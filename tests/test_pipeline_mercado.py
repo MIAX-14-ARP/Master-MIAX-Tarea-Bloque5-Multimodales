@@ -293,3 +293,25 @@ def test_con_pdf_o_audio_el_fallo_de_mercado_sigue_siendo_degradacion() -> None:
     fuentes = MarketSources(Rota(), Rota(), MockDerivatives(), SecVacia(), demo=True)
     r = analyze(build_mock_providers(), TARIFAS, AnalysisInput(pdf=pdf_minimo(), ticker="XXXX"), sources=fuentes)
     assert r.market is None and any("sin red" in w for w in r.warnings)
+
+
+def test_open_interest_se_rotula_en_unidades_y_con_su_nocional_en_usd() -> None:
+    tech = compute_technicals(serie_demo())
+    d = MockDerivatives().fetch_derivatives("BTC")
+    texto = format_market(tech, d)
+    assert "open interest (ACME, unidades del activo)" in texto
+    assert f"{d.open_interest * d.mark_px:,.0f} USD nocional = OI × mark" in texto
+
+
+def test_el_coste_de_un_paso_fallido_llega_a_la_traza() -> None:
+    class Cobra(type(build_mock_providers().llm)):
+        def complete(self, system, messages, max_tokens=2048):
+            from finlens.providers.base import ProviderError
+
+            raise ProviderError("respuesta cortada", 0.05)
+
+    providers = replace(build_mock_providers(), llm=Cobra())
+    with pytest.raises(PipelineError) as exc:
+        analyze(providers, TARIFAS, AnalysisInput(pdf=b"", ticker="ACME"), sources=build_sources(demo=True))
+    fallido = next(s for s in exc.value.trace if s.step == "Análisis (LLM)")
+    assert not fallido.ok and fallido.cost_usd == 0.05 and fallido.cost_real

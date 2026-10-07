@@ -90,8 +90,10 @@ def format_market(tech: TechnicalSummary, derivs: DerivativesSnapshot | None = N
     ]
     if derivs is not None:
         lineas.append(
-            f"Derivados (perpetuo): funding anualizado {_pct(derivs.funding_annualized)}, open interest "
-            f"{_num(derivs.open_interest, 0)}, mark {_num(derivs.mark_px)}, oráculo {_num(derivs.oracle_px)}, "
+            f"Derivados (perpetuo): funding anualizado {_pct(derivs.funding_annualized)}, "
+            f"open interest ({tech.symbol}, unidades del activo) {_num(derivs.open_interest, 0)} "
+            f"(≈ {_num(derivs.open_interest * derivs.mark_px, 0)} USD nocional = OI × mark), "
+            f"mark {_num(derivs.mark_px)}, oráculo {_num(derivs.oracle_px)}, "
             f"volumen nocional 24 h {_num(derivs.day_notional_volume, 0)} USD."
         )
     return "\n".join(lineas)

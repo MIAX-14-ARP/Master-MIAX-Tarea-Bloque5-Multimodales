@@ -797,7 +797,11 @@ def answer_followup(
     try:
         respuesta = ask_structured(providers.llm, CHAT_SYSTEM, mensajes, ChatAnswer)
     except (StructuredOutputError, ProviderError) as exc:
-        paso = TraceStep("Chat de seguimiento", "—", time.perf_counter() - inicio, str(exc), ok=False)
+        gastado = getattr(exc, "cost_usd", None)
+        paso = TraceStep(
+            "Chat de seguimiento", "—", time.perf_counter() - inicio, str(exc), float(gastado or 0.0), ok=False,
+            cost_real=gastado is not None,
+        )
         raise PipelineError(str(exc), [paso]) from exc
 
     texto, violaciones = guard_text(respuesta.value.answer, "chat")
