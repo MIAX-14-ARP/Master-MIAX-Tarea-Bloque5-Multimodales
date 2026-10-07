@@ -25,6 +25,10 @@ _CIFRAS_MUSD = (  # (tag, etiqueta, valor del último ejercicio en M USD)
 )
 
 
+# Deriva total (log) del periodo simulado: la demo es claramente alcista y coherente con MockVision.
+DERIVA_TOTAL = 0.70
+
+
 def _semilla(texto: str) -> int:
     return zlib.crc32(texto.upper().encode())  # estable entre procesos (hash() no lo es)
 
@@ -41,7 +45,7 @@ class MockPrices:
         n = max(20, round(RANGE_DAYS[rango] * 5 / 7))
         rng = np.random.default_rng(_semilla(simbolo))
         base = 20 + (_semilla(simbolo) % 180)
-        cierres = base * np.exp(np.cumsum(rng.normal(0.0006, 0.015, n)))
+        cierres = base * np.exp(np.cumsum(rng.normal(DERIVA_TOTAL / n, 0.010, n)))
         velas = []
         previo = float(base)
         for i, cierre in enumerate(cierres):
