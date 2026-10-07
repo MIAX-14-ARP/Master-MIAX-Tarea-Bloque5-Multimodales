@@ -155,3 +155,9 @@ def test_informe_vacio_minimo(completo) -> None:
     vacio = AnalysisReport(summary="Solo resumen", spoken_summary="x")
     pdf = build_report_pdf(replace(con_informe(r, **vacio.model_dump()), figure_checks=(), market=None))
     assert "Solo resumen" in plano(pdf)
+
+
+def test_demo_coherente_serie_alcista_y_contraste_alto(completo) -> None:
+    r, _ = completo
+    assert r.market is not None and r.market.technicals.trend == "alcista"
+    assert r.market.chart_check is not None and r.market.chart_check.agreement_score >= 0.8

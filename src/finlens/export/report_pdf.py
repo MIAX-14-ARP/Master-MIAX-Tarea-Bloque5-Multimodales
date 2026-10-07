@@ -29,9 +29,9 @@ MARGEN_MM = 18
 ANCHO_UTIL_MM = 210 - 2 * MARGEN_MM
 MAX_TRANSCRIPCION = 1500
 MAX_ALTO_IMAGEN_MM = 150
-ESPACIO_MIN_TITULO_MM = 35  # si queda menos hueco, el título de sección salta de página
+ESPACIO_MIN_TITULO_MM = 50  # si queda menos hueco, el título de sección salta de página
 ESPACIO_MIN_TABLA_MM = 45
-MAX_CELDA = 320  # una celda de tabla no puede ocupar más de una página
+MAX_CELDA = 450  # una celda de tabla no puede ocupar más de una página
 TAM_CUERPO = 9.5
 TAM_TABLA = 8.5
 AZUL = (31, 58, 95)
@@ -176,6 +176,7 @@ class _Pdf(FPDF):
             self.add_page()  # una tabla corta no debe quedar partida tras su primera fila
         self.set_font("sans", "", TAM_TABLA)
         escala = ANCHO_UTIL_MM / sum(anchos)
+        topes = [min(MAX_CELDA, int(a * escala * 5)) for a in anchos]  # caracteres por celda según su ancho
         with self.table(
             col_widths=tuple(a * escala for a in anchos),
             headings_style=FontFace(emphasis="BOLD", color=(255, 255, 255), fill_color=AZUL),
@@ -194,9 +195,9 @@ class _Pdf(FPDF):
                 for j, c in enumerate(datos):
                     color = colorear(i, j) if colorear else None
                     if color:
-                        fila.cell(self.limpio(_recortar(c, MAX_CELDA)), style=FontFace(emphasis="BOLD", color=color))
+                        fila.cell(self.limpio(_recortar(c, topes[j])), style=FontFace(emphasis="BOLD", color=color))
                     else:
-                        fila.cell(self.limpio(_recortar(c, MAX_CELDA)))
+                        fila.cell(self.limpio(_recortar(c, topes[j])))
         self.ln(2)
 
     def imagen(self, datos: bytes | None, titulo: str = "") -> bool:
@@ -268,18 +269,23 @@ def _portada(pdf: _Pdf, r: AnalysisResult, media: MediaResult | None) -> None:
         materiales.append("Audio transcrito")
     m = r.market
     if m is not None:
-        materiales.append(f"Ticker {m.series.symbol} ({m.kind or 'mercado'}) · fuente {m.series.source}")
+        tipo = {"accion": "acción", "cripto": "cripto"}.get(m.kind, m.kind or "mercado")
+        fuente = {"mock": "simulada", "yahoo": "Yahoo Finance", "hyperliquid": "Hyperliquid"}.get(
+            m.series.source, m.series.source)
+        materiales.append(f"Ticker {m.series.symbol} · {tipo} · fuente: {fuente}")
     pasos = _pasos(r, media)
-    vistos: dict[str, str] = {}
+    por_modelo: dict[str, list[str]] = {}
     for p in pasos:
-        vistos.setdefault(p.step, p.model)
+        if p.step not in por_modelo.setdefault(p.model, []):
+            por_modelo[p.model].append(p.step)
     segundos = r.total_seconds + (media.total_seconds if media else 0.0)
     pdf.tabla(("Dato", "Detalle"), [
-        ("Materiales", "\n".join(materiales) or "—"),
-        ("Modelos", "\n".join(f"{paso} → {modelo}" for paso, modelo in vistos.items()) or "—"),
+        ("Materiales", chr(10).join(materiales) or "—"),
         ("Coste total", f"{total_cost(pasos):.4f} USD (estimado)"),
         ("Tiempo", f"{_num(segundos, 1)} s"),
     ], (1.1, 5))
+    pdf.subtitulo("Modelos utilizados")
+    pdf.tabla(("Modelo", "Pasos"), [(modelo, ", ".join(pp)) for modelo, pp in por_modelo.items()], (2, 5))
 
 
 def _estado(fc: Any) -> tuple[str, Color, str]:
