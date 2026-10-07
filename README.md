@@ -43,20 +43,22 @@ flowchart LR
 
 ## 2. Qué hace (demo en 30 segundos)
 
-1. Aportas cualquier combinación de: informe anual (PDF), gráfico de cotización, audio de la conferencia o
+1. Eliges un caso de ejemplo (ficticio, **Inditex real** o solo ticker BTC; los ficheros se pueden descargar)
+   o aportas cualquier combinación de: informe anual (PDF), gráfico de cotización, audio de la conferencia o
    **tu pregunta por voz** (grabada en el navegador), y un **ticker** (`ITX.MC`, `AAPL`, `BTC`…).
 2. Con ticker, FinLens **descarga los datos**: acciones de **Yahoo Finance**, cripto de **Hyperliquid**
    (velas, *funding* y *open interest* on-chain) y fundamentales oficiales de la **SEC EDGAR** (10-K).
 3. Obtienes una **nota de análisis** con cifras citadas y verificadas, lectura del gráfico contrastada,
    declaraciones de la dirección, correlaciones y contradicciones, un **resumen en audio** y una
    **infografía** cuyas cifras dibuja Python.
-4. Sigues preguntando en el **chat**, que reutiliza el índice del documento.
+4. Sigues preguntando en el **chat**, que reutiliza el índice del documento, y **descargas la nota completa en
+   PDF** (cifras con sello, gráfico, contraste, técnicos, transcripción, infografía, chat y traza de coste).
 5. El **cerebro** (red neuronal 3D) y el **mapa de la cadena** muestran qué entra, qué modelo actúa, en qué
    orden y en paralelo, y qué sale; la **traza** da tiempo y coste por paso.
 
-| Entradas (6) | Salidas (6) |
+| Entradas (6) | Salidas (7) |
 |---|---|
-| PDF · imagen de gráfico · audio (conferencia) · voz (pregunta) · texto · ticker → datos de mercado y SEC | Nota citada y verificada · contraste visión↔datos · audio TTS · infografía · chat · traza de coste |
+| PDF · imagen de gráfico · audio (conferencia) · voz (pregunta) · texto · ticker → datos de mercado y SEC | Nota citada y verificada · contraste visión↔datos · audio TTS · infografía · chat · **nota en PDF** · traza de coste |
 
 ## 3. Arquitectura y flujo de datos multimodal
 
