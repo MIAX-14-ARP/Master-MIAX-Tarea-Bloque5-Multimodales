@@ -240,7 +240,7 @@ def test_los_porcentajes_de_la_pagina_no_se_reescalan() -> None:
 def test_lectura_de_paginas_de_la_cita(localizacion: str, esperada: list[int]) -> None:
     from finlens.domain.grounding import _paginas_citadas
 
-    assert _paginas_citadas([Citation(origin="documento", location=localizacion)]) == esperada
+    assert _paginas_citadas([Citation(origin="documento", location=localizacion)])[0] == esperada
 
 
 def test_se_verifica_contra_cualquiera_de_las_paginas_citadas() -> None:
