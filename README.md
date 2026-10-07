@@ -210,6 +210,11 @@ audio o infografía, esfuerzo de razonamiento acotado y modelos abiertos baratos
 - **Anti-alucinación:** citas obligatorias + verificación determinista de cifras y del gráfico.
 - **RGPD:** no se almacenan documentos; la caché vive en memoria de la sesión. En modo real los datos van a
   los proveedores de IA (se avisa en la interfaz). En producción: DPA y proveedores con residencia en la UE.
+- **Datos bancarios (PSD2):** el MVP **no se conecta a cuentas ni solicita datos bancarios de clientes**: solo
+  procesa documentos públicos de empresas cotizadas (informes, conferencias) y datos de mercado públicos. Si
+  en el futuro se integraran cuentas bancarias, harían falta un proveedor autorizado bajo PSD2 (AISP) o un
+  socio que lo sea, consentimiento explícito y revocable del cliente, minimización y cifrado de los datos, y un
+  contrato de encargo del tratamiento conforme al RGPD.
 - **AI Act:** transparencia: todo se marca como generado por IA y cada afirmación cita su fuente.
 - **Seguridad de la demo:** contraseña, secretos en AWS Secrets Manager, OIDC entre GitHub y AWS, IMDSv2,
   sin SSH, HTTPS. Riesgo conocido de la industria: clonación de voz (no usamos clonación).
@@ -239,7 +244,8 @@ es la restricción: un plan Pro cubre el coste de IA con solo 9 análisis.
 **Por qué multimodal** → ningún modelo único recupera la página exacta, lee el gráfico, transcribe la
 llamada, trae los datos y los contrasta. **Arquitectura** → capas separadas, proveedores intercambiables por
 capacidad, modo demo, degradación elegante, compliance por diseño, CI/CD a AWS. **Viabilidad** → 0,06 USD y
-31 s por análisis medidos. Diapositivas: [`docs/pitch.md`](docs/pitch.md).
+31 s por análisis medidos. Diapositivas: [`docs/pitch.pdf`](docs/pitch.pdf) (texto fuente en
+[`docs/pitch.md`](docs/pitch.md); se regenera con `python scripts/pitch_pdf.py`).
 
 ## 9. Capturas
 
