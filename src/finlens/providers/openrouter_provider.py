@@ -30,6 +30,7 @@ from finlens.providers.openai_provider import MAX_AUDIO_BYTES, embed_in_batches,
 BASE_URL = "https://openrouter.ai/api/v1"
 log = logging.getLogger("finlens.stt")
 TIMEOUT_S = 120.0
+EMBEDDINGS_MAX_RETRIES = 4
 MIN_DURATION_RATIO = 0.8  # duración informada / real por debajo de la cual se considera truncada
 MIN_CHARS_PER_SECOND = 4.0
 MIN_SECONDS_FOR_CHARS_CHECK = 5.0  # en clips muy cortos el criterio de caracteres no es fiable
@@ -334,7 +335,9 @@ class OpenRouterEmbeddings:
 
     def __init__(self, api_key: str, model: str, client: Any = None) -> None:
         self.model = model
-        self._client = make_client(api_key, client)
+        # Idempotente y casi gratis (≈0,0002 USD): más reintentos con espera exponencial ante 429 transitorios
+        # del proveedor upstream, que si no degradan la recuperación a solo TF-IDF.
+        self._client = make_client(api_key, client, max_retries=EMBEDDINGS_MAX_RETRIES)
 
     def embed(
         self, texts: Sequence[str], kind: Literal["query", "document"] = "document"

@@ -241,13 +241,19 @@ capacidad, modo demo, degradación elegante, compliance por diseño, CI/CD a AWS
 
 ## 9. Capturas
 
-| Nota de análisis | Traza de modelos |
-|---|---|
-| ![Nota con cifras verificadas](docs/img/informe.png) | ![Traza de modelos](docs/img/traza.png) |
+Hechas con **APIs reales** (OpenRouter, Yahoo, SEC) sobre el caso de `samples/01_inditex` más el ticker `ITX.MC`.
 
-| Entradas leídas | Audio e infografía |
+| Nota de análisis: 11/11 cifras verificadas | La IA vio · los datos dicen |
 |---|---|
-| ![Entradas leídas](docs/img/entradas.png) | ![Audio e infografía](docs/img/medios.png) |
+| ![Nota con cifras verificadas](docs/img/informe.png) | ![Contraste visión-datos](docs/img/mercado.png) |
+
+| Audio e infografía (cifras dibujadas por Python) | Traza de modelos |
+|---|---|
+| ![Audio e infografía](docs/img/medios.png) | ![Traza de modelos](docs/img/traza.png) |
+
+| Cadena de modelos en vivo | Entradas leídas |
+|---|---|
+| ![Cadena de modelos](docs/img/cerebro.png) | ![Entradas leídas](docs/img/entradas.png) |
 
 ## 10. Limitaciones y hoja de ruta
 

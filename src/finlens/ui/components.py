@@ -159,13 +159,16 @@ def pair_checks(figures: Sequence[KeyFigure], checks: Sequence[Any]) -> list[Any
     return salida
 
 
+LONG_FIGURE_CHARS = 14  # cifras literales largas («stable gross margin (+/-50 bps)») en cuerpo menor
+
+
 def figures_html(figures: Sequence[KeyFigure], checks: Sequence[Any]) -> str:
     celdas = []
     for f, check in zip(figures, pair_checks(figures, checks), strict=True):
         periodo = f'<div class="fl-fig__p">{esc(f.period)}</div>' if f.period else ""
         celdas.append(
             f'<div class="fl-fig"><div class="fl-fig__n">{esc(f.name)}</div>'
-            f'<div class="fl-fig__v">{esc(f.value)}</div>{periodo}'
+            f'<div class="fl-fig__v{" is-long" if len(f.value) > LONG_FIGURE_CHARS else ""}">{esc(f.value)}</div>{periodo}'
             f'<div class="fl-fig__foot">{stamp(check)}{chips(f.citations)}</div></div>'
         )
     return f'<div class="fl-figs">{"".join(celdas)}</div>'

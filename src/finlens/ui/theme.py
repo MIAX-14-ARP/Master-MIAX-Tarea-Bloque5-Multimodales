@@ -276,6 +276,7 @@ a {{ color: var(--brass); }}
 .fl-fig__n {{ font:600 11px/1.3 var(--f-mono); letter-spacing:.14em; text-transform:uppercase; color:var(--paper-dim); }}
 .fl-fig__v {{ font:500 clamp(30px,4vw,42px)/1.05 var(--f-mono); color:var(--paper); margin:var(--s2) 0 6px;
   font-variant-numeric:tabular-nums; letter-spacing:-.03em; overflow-wrap:anywhere; }}
+.fl-fig__v.is-long {{ font-size:clamp(17px,2vw,22px); line-height:1.25; letter-spacing:0; }}
 .fl-fig__p {{ font:12px/1.4 var(--f-mono); color:var(--muted); }}
 .fl-fig__foot {{ display:flex; gap:var(--s2); align-items:center; flex-wrap:wrap; margin-top:var(--s3); }}
 
