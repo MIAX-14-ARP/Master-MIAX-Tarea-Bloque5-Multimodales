@@ -109,6 +109,23 @@ def format_fundamentals(fund: Fundamentals) -> str:
     return "\n".join(lineas)
 
 
+def _bloque_grafico(aportado: ChartReading | None, generado: ChartReading | None) -> str | None:
+    """Lecturas del gráfico etiquetadas por origen; con dos, advierte de que pueden cubrir periodos distintos."""
+    if generado is None:
+        return aportado.model_dump_json() if aportado else None
+    etiqueta_generado = "[generado con los datos de mercado del ticker]"
+    if aportado is None:
+        return "\n".join([etiqueta_generado, generado.model_dump_json()])
+    aviso = (
+        "AVISO: el gráfico aportado y el generado pueden cubrir periodos distintos; no los mezcles ni "
+        "los uses para contradecirse sin comprobar sus fechas."
+    )
+    return "\n".join([
+        "[aportado por el usuario]", aportado.model_dump_json(),
+        etiqueta_generado, generado.model_dump_json(), aviso,
+    ])
+
+
 def build_analysis_messages(
     question: str,
     retrieved: Sequence[Retrieved],
@@ -116,9 +133,10 @@ def build_analysis_messages(
     transcript: str | None = None,
     market: str | None = None,
     sec: str | None = None,
+    chart_generated: ChartReading | None = None,
 ) -> list[Message]:
     """Mensaje de usuario con la pregunta y los materiales (documento, gráfico, audio, mercado, SEC)."""
-    grafico = chart.model_dump_json() if chart else None
+    grafico = _bloque_grafico(chart, chart_generated)
     audio = transcript[:MAX_TRANSCRIPT_CHARS] if transcript else None
     contenido = "\n\n".join(
         [

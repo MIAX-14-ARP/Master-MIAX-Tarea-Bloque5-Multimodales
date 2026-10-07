@@ -80,8 +80,10 @@ def test_flujo_completo_muestra_mapa_informe_traza_y_medios() -> None:
 def test_la_traza_de_la_ui_incluye_los_pasos_de_texto_audio_imagen() -> None:
     at = analizar(arrancar())
     filas = {fila["Paso"].replace(" ⇉", "") for fila in at.table[-1].value.to_dict("records")}
-    assert {"Ingesta e índice", "Lectura del gráfico", "Transcripción de audio", "Análisis (LLM)",
+    assert {"Ingesta e índice", "Transcripción de audio", "Análisis (LLM)",
             "Resumen en audio", "Prompt de infografía", "Generación de infografía"} <= filas
+    # con ticker hay dos lecturas ("(generado)" y "(aportado)"); sin ticker, "Lectura del gráfico" a secas
+    assert any(f.startswith("Lectura del gráfico") for f in filas)
 
 
 def test_chat_de_seguimiento() -> None:

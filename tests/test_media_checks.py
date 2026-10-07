@@ -5,6 +5,7 @@ from dataclasses import replace
 
 import pytest
 
+from _pdf import pdf_minimo
 from finlens.domain.cost import Tariffs
 from finlens.domain.media_checks import MAX_AUDIO_BYTES, MAX_IMAGE_BYTES, check_audio, check_image
 from finlens.orchestration.pipeline import AnalysisInput, analyze
@@ -53,8 +54,6 @@ def test_limite_de_imagen() -> None:
 
 
 def test_el_pipeline_no_llama_al_stt_de_pago_con_audio_invalido() -> None:
-    from tests.test_logging import pdf_minimo
-
     llamadas: list[int] = []
 
     class Espia(type(build_mock_providers().stt)):
@@ -70,8 +69,6 @@ def test_el_pipeline_no_llama_al_stt_de_pago_con_audio_invalido() -> None:
 
 
 def test_imagen_enorme_degrada_sin_llamar_a_la_vision() -> None:
-    from tests.test_logging import pdf_minimo
-
     llamadas: list[int] = []
 
     class Espia(type(build_mock_providers().vision)):

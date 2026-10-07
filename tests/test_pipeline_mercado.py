@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import pytest
 
+from _pdf import pdf_minimo
 from finlens.domain.cost import Tariffs
 from finlens.domain.grounding import check_figures
 from finlens.domain.ingest import Chunk, IngestedDocument
@@ -74,12 +75,14 @@ def test_cripto_incluye_derivados() -> None:
     assert r.market.fundamentals is None
 
 
-def test_con_grafico_subido_no_se_genera_otro_y_se_contrasta() -> None:
+def test_con_grafico_subido_y_ticker_se_genera_otro_para_el_contraste() -> None:
     from finlens.providers.media import solid_png
 
     r = correr(chart=solid_png(8, 8, (0, 0, 0)))
-    assert "Gráfico generado" not in pasos(r) and "Contraste visión ↔ datos" in pasos(r)
-    assert r.market is not None and r.market.chart_png is None
+    # con ticker se genera SIEMPRE el gráfico de la serie para el contraste; el subido se lee aparte
+    assert "Gráfico generado" in pasos(r) and "Contraste visión ↔ datos" in pasos(r)
+    assert "Lectura del gráfico (generado)" in pasos(r) and "Lectura del gráfico (aportado)" in pasos(r)
+    assert r.market is not None and r.market.chart_png is not None
 
 
 def test_con_pdf_y_ticker_se_combinan_ambas_fuentes() -> None:
@@ -280,8 +283,6 @@ def test_solo_ticker_sin_ningun_dato_detiene_el_analisis_sin_llamar_al_llm() -> 
 
 
 def test_con_pdf_o_audio_el_fallo_de_mercado_sigue_siendo_degradacion() -> None:
-    from tests.test_logging import pdf_minimo
-
     class Rota:
         def fetch_prices(self, symbol, rango="6mo"):
             raise SourceError("sin red")
@@ -315,3 +316,53 @@ def test_el_coste_de_un_paso_fallido_llega_a_la_traza() -> None:
         analyze(providers, TARIFAS, AnalysisInput(pdf=b"", ticker="ACME"), sources=build_sources(demo=True))
     fallido = next(s for s in exc.value.trace if s.step == "Análisis (LLM)")
     assert not fallido.ok and fallido.cost_usd == 0.05 and fallido.cost_real
+
+
+def test_el_contraste_usa_la_lectura_del_grafico_generado_no_la_del_subido() -> None:
+    """Caso real: gráfico subido de otro periodo + ticker; el contraste debe salir de la lectura del generado."""
+    from finlens.domain.schemas import ChartReading
+    from finlens.providers.base import TextResult
+    from finlens.providers.media import solid_png
+
+    class Vision(type(build_mock_providers().vision)):
+        def describe_image(self, image, mime, prompt):
+            if image == SUBIDO:  # lectura de otro periodo: tendencia y niveles incompatibles con la serie
+                lectura = ChartReading(trend="bajista", description="Máximo en 9999 y soporte en 0,5 euros")
+            else:
+                lectura = ChartReading(trend=TECH.trend, description="Gráfico de la serie del ticker")
+            return TextResult(lectura.model_dump_json(), "mock-vision", 10, 10)
+
+    SUBIDO = solid_png(8, 8, (9, 9, 9))
+    TECH = compute_technicals(serie_demo())
+    capturado: list[str] = []
+
+    class Llm(type(build_mock_providers().llm)):
+        def complete(self, system, messages, max_tokens=2048):
+            capturado.append(messages[-1].content)
+            return super().complete(system, messages, max_tokens)
+
+    providers = replace(build_mock_providers(), vision=Vision(), llm=Llm())
+    r = analyze(providers, TARIFAS, AnalysisInput(pdf=b"", ticker="ACME", chart=SUBIDO), sources=build_sources(demo=True))
+    assert r.market is not None and r.market.chart_check is not None
+    assert r.market.chart_check.agreement_score == 1.0  # sin la lectura del subido: ninguna falsa discrepancia
+    assert all(i.verdict != "discrepa" for i in r.market.chart_check.items)
+    assert r.chart is not None and r.chart.trend == "bajista"  # la UI sigue mostrando la lectura del subido
+    assert r.chart_generated is not None and r.chart_generated.trend == TECH.trend
+    analista = next(c for c in capturado if "<mercado>" in c)
+    assert "[aportado por el usuario]" in analista and "[generado con los datos de mercado del ticker]" in analista
+    assert "periodos distintos" in analista
+
+
+def test_solo_grafico_generado_va_etiquetado_y_sin_aviso() -> None:
+    capturado: list[str] = []
+
+    class Llm(type(build_mock_providers().llm)):
+        def complete(self, system, messages, max_tokens=2048):
+            capturado.append(messages[-1].content)
+            return super().complete(system, messages, max_tokens)
+
+    providers = replace(build_mock_providers(), llm=Llm())
+    r = analyze(providers, TARIFAS, AnalysisInput(pdf=b"", ticker="ACME"), sources=build_sources(demo=True))
+    analista = next(c for c in capturado if "<mercado>" in c)
+    assert "[generado con los datos de mercado del ticker]" in analista and "periodos distintos" not in analista
+    assert r.chart is r.chart_generated
