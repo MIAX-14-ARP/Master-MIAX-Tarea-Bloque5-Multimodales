@@ -312,7 +312,7 @@ Equipo: {EQUIPO} · {hoy.day} de {meses[hoy.month - 1]} de {hoy.year} · Startup
 
 <h2>Resumen</h2>
 <div class="kpis">
-<div class="kpi"><b>{es(total, 3)} USD</b><span>coste por análisis completo ({m['n']} ejecuciones medidas, {('%d %% coste real' % m['real']) if m['real'] else 'coste estimado'})</span></div>
+<div class="kpi"><b>{es(total, 3)} USD</b><span>coste por análisis completo ({m['n']} ejecuciones medidas, {(str(int(m['real'])) + ' % coste real') if m['real'] else 'coste estimado'})</span></div>
 <div class="kpi"><b>{es(todo[0], 1)} s</b><span>análisis completo · nota en pantalla en {es(nota[0], 1)} s</span></div>
 <div class="kpi"><b>6 + 3</b><span>modelos de IA especializados + fuentes de datos</span></div>
 <div class="kpi"><b>≈ 83 %</b><span>margen bruto del plan Pro sobre el coste de IA</span></div>
@@ -356,7 +356,7 @@ Equipo: {EQUIPO} · {hoy.day} de {meses[hoy.month - 1]} de {hoy.year} · Startup
 
 <h2>2. Viabilidad técnica y económica</h2>
 <h3>2.1 Costes de inferencia</h3>
-<p>Medido con APIs reales sobre el informe anual 2025 de Inditex (gráfico de ITX.MC y audio): <b>{m['n']} ejecuciones, 0 fallos</b>. {('El %d %% del coste lo informa el proveedor; el resto se estima con tarifas de respaldo.' % m['real']) if m['real'] else ''}</p>
+<p>Medido con APIs reales sobre el informe anual 2025 de Inditex (gráfico de ITX.MC y audio): <b>{m['n']} ejecuciones, 0 fallos</b>. {('El ' + str(int(m['real'])) + ' % del coste lo informa el proveedor; el resto se estima con tarifas de respaldo.') if m['real'] else ''}</p>
 <figure>{barras_coste}<figcaption>Coste medio por análisis completo (USD) y peso sobre el total de {es(total, 4)} USD.</figcaption></figure>
 <table><tr><th>Componente</th><th class="n">Uso medio</th><th class="n">Coste (USD)</th><th class="n">% del total</th></tr>
 {tabla_coste}
