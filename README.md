@@ -139,8 +139,8 @@ con el motivo del fallo); degradación elegante (si falla un paso opcional se en
 contenido de documentos tratado como datos, no instrucciones (*prompt injection*); detección de STT
 truncado con reintento; razonamiento del LLM acotado (`OPENROUTER_REASONING_EFFORT`) para no cortar el JSON.
 
-Más detalle en [`docs/arquitectura.md`](docs/arquitectura.md); especificaciones en
-[`docs/05_SPEC_MEJORAS.md`](docs/05_SPEC_MEJORAS.md) y [`docs/06_SPEC_MERCADO_Y_CEREBRO.md`](docs/06_SPEC_MERCADO_Y_CEREBRO.md).
+Las especificaciones de cada iteración (producto inicial, OpenRouter y calidad, mercado y cerebro) están en
+[`docs/historial/`](docs/historial/README.md).
 
 ## 4. Instalación y ejecución (plug-and-play)
 
@@ -365,12 +365,12 @@ de la visión confirmadas)
 │   │                           # técnicos, gráfico, contraste visión↔datos, infografía, coste
 │   ├── orchestration/          # pipeline paralelo, traza, caché LRU, métricas
 │   └── ui/                     # tema editorial, mapa de la cadena, cerebro 3D (Three.js), Gantt, vistas
-├── scripts/                    # medir.py, capturas.py, preparar_casos.py
+├── scripts/                    # medir.py, preparar_casos.py, pitch_pdf.py, propuesta_pdf.py
 ├── samples/                    # casos reales (Inditex) y entradas inválidas
 ├── deploy/                     # CloudFormation (AWS) y script de despliegue
 ├── .github/workflows/          # CI (ruff, mypy, pytest) y despliegue a AWS
 ├── tests/                      # más de 800 tests (mocks y respuestas reales grabadas)
-└── docs/                       # arquitectura, specs, medidas, despliegue, pitch, enunciado
+└── docs/                       # propuesta y pitch (PDF), medidas, despliegue, guion del vídeo, enunciado, historial/
 ```
 
 ## Aviso legal

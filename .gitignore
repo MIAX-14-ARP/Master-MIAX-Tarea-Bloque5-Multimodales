@@ -25,3 +25,6 @@ outputs/
 
 # Muestras: descargas intermedias
 samples/.cache/
+
+# Notas locales de trabajo (no forman parte de la entrega)
+claude.md.md
