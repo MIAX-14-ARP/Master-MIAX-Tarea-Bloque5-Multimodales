@@ -16,7 +16,7 @@ from typing import Any, Generic, Literal, TypeVar, cast
 from finlens.domain import cost
 from finlens.domain.chart_check import ChartCheck, check_chart_reading
 from finlens.domain.cost import Tariffs
-from finlens.domain.grounding import FigureCheck, check_figures
+from finlens.domain.grounding import FigureCheck, check_figures, check_market_claims
 from finlens.domain.guardrails import (
     REMOVED_NOTICE,
     SPOKEN_DISCLAIMER,
@@ -28,6 +28,7 @@ from finlens.domain.guardrails import (
 from finlens.domain.infographic import compose_infographic
 from finlens.domain.ingest import DEFAULT_MAX_CHARS, IngestedDocument, IngestError, ingest_pdf
 from finlens.domain.market_chart import render_market_chart
+from finlens.domain.media_checks import check_audio, check_image
 from finlens.domain.prompts import (
     ANALYST_SYSTEM,
     CHAT_SYSTEM,
@@ -133,6 +134,7 @@ class AnalysisResult:
     total_seconds: float
     figure_checks: tuple[FigureCheck, ...] = ()
     market: MarketContext | None = None
+    chart_generated: ChartReading | None = None  # lectura del gráfico generado con la serie del ticker
 
     @property
     def report(self) -> AnalysisReport:
@@ -293,6 +295,8 @@ def _step_ingest(pdf: bytes, max_chars: int) -> _Done[tuple[IngestedDocument, Hy
 def _step_vision(
     providers: Providers, tariffs: Tariffs, chart: bytes, mime: str
 ) -> _Done[ChartReading]:
+    if motivo := check_image(chart):
+        raise StepError(motivo)
     resultado = ask_structured_vision(providers.vision, chart, mime, VISION_PROMPT, ChartReading)
     coste = sum(cost.text_result_cost(tariffs, c) for c in resultado.calls)
     return _Done(
@@ -303,6 +307,8 @@ def _step_vision(
 
 def _step_stt(providers: Providers, tariffs: Tariffs, inp: AnalysisInput) -> _Done[str]:
     assert inp.audio is not None
+    if motivo := check_audio(inp.audio, inp.audio_name):  # antes de la llamada de pago
+        raise StepError(motivo)
     resultado = providers.stt.transcribe(inp.audio, inp.audio_name)
     if not resultado.text.strip():
         raise StepError("No se detectó voz en el audio.")
@@ -381,8 +387,11 @@ def _step_analysis(
     context_transcript: str | None,
     market: str | None = None,
     sec: str | None = None,
+    chart_generated: ChartReading | None = None,
 ) -> _Done[AnalysisReport]:
-    mensajes = build_analysis_messages(question, retrieved, chart, context_transcript, market, sec)
+    mensajes = build_analysis_messages(
+        question, retrieved, chart, context_transcript, market, sec, chart_generated
+    )
     resultado = ask_structured(providers.llm, ANALYST_SYSTEM, mensajes, AnalysisReport, 3000)
     coste = sum(cost.text_result_cost(tariffs, c) for c in resultado.calls)
     nota = f"{len(resultado.calls)} llamada(s)" + (" · con reintento" if len(resultado.calls) > 1 else "")
@@ -413,9 +422,11 @@ def _step_grounding(
         avisos = (
             f"Cifras no encontradas en la página citada del documento: {nombres}. Verifícalas antes de usarlas.",
         )
-    return _Done(
-        checks, "reglas deterministas", note=f"{verificadas}/{len(checks)} cifras verificadas", warnings=avisos
+    relaciones = check_market_claims(report, market.technicals if market else None)
+    nota = f"{verificadas}/{len(checks)} cifras verificadas" + (
+        f" · {len(relaciones)} relación(es) incoherente(s)" if relaciones else ""
     )
+    return _Done(checks, "reglas deterministas", note=nota, warnings=(*avisos, *relaciones))
 
 
 def _step_guardrails(report: AnalysisReport) -> _Done[GuardrailResult]:
@@ -495,22 +506,35 @@ def _market_branch(
     derivados: DerivativesSnapshot | None = datos[1] if datos else None
     kind: str = datos[2] if datos else ""
     tech = correr("Indicadores técnicos", lambda: _step_technicals(serie, kind)) if serie else None
-    grafico, mime, generado = inp.chart, inp.chart_mime, None
-    if grafico is None and serie is not None:
+    # El contraste visión ↔ datos se hace SIEMPRE sobre el gráfico generado con esta serie: un gráfico
+    # subido puede cubrir otro periodo y daría falsas discrepancias. El subido se lee como entrada propia.
+    generado: bytes | None = None
+    lectura_generada = None
+    if serie is not None:
         generado = correr("Gráfico generado", lambda: _step_market_chart(serie))
-        grafico, mime = generado, "image/png"
-    lectura = None
-    if grafico is not None:
-        lectura = correr("Lectura del gráfico", lambda: _step_vision(providers, tariffs, grafico, mime))
+        if generado is not None:
+            png = generado
+            lectura_generada = correr(
+                "Lectura del gráfico (generado)", lambda: _step_vision(providers, tariffs, png, "image/png")
+            )
+    lectura_aportada = None
+    if inp.chart is not None:
+        subido = inp.chart
+        lectura_aportada = correr(
+            "Lectura del gráfico (aportado)", lambda: _step_vision(providers, tariffs, subido, inp.chart_mime)
+        )
     contraste = None
-    if lectura is not None and tech is not None:
-        contraste = correr("Contraste visión ↔ datos", lambda: _step_contrast(lectura, tech))
+    if lectura_generada is not None and tech is not None:
+        contraste = correr("Contraste visión ↔ datos", lambda: _step_contrast(lectura_generada, tech))
     contexto = None
     if serie is not None and tech is not None:
         contexto = MarketContext(
             serie, tech, derivados, None, contraste, generado, kind
         )
-    return _Outcome({"chart": lectura, "market": contexto}, tuple(pasos), tuple(avisos))
+    return _Outcome(
+        {"chart": lectura_aportada, "chart_generated": lectura_generada, "market": contexto},
+        tuple(pasos), tuple(avisos),
+    )
 
 
 def analyze(
@@ -579,7 +603,9 @@ def analyze(
         return resultados[nombre].value if nombre in resultados else None
 
     rama_mercado: dict[str, Any] = valor("mercado") or {}
-    chart = cast("ChartReading | None", rama_mercado.get("chart") or valor("Lectura del gráfico"))
+    chart_generated = cast("ChartReading | None", rama_mercado.get("chart_generated"))
+    chart_aportado = cast("ChartReading | None", rama_mercado.get("chart") or valor("Lectura del gráfico"))
+    chart = chart_aportado or chart_generated  # lo que muestra la UI: la lectura del gráfico del usuario o la generada
     market = cast("MarketContext | None", rama_mercado.get("market"))
     fundamentals = cast("Fundamentals | None", valor("Fundamentales SEC"))
     if market is not None and fundamentals is not None:
@@ -588,6 +614,14 @@ def analyze(
     indice = cast("EmbeddingResult | None", valor("Índice semántico (embeddings)"))
     if retriever is not None and indice is not None:
         retriever = retriever.with_embeddings(indice.vectors, providers.embeddings)
+
+    if not usa_pdf and market is None and fundamentals is None and chart is None and transcript is None:
+        # Solo ticker y la fuente falló: sin ningún material el LLM inventaría el informe.
+        motivo = next(
+            (t.note for t in trace if not t.ok and t.step.startswith(("Datos de mercado", "Indicadores técnicos"))),
+            "no hay datos disponibles",
+        )
+        raise PipelineError(f"No se pudieron obtener datos de mercado para «{ticker}»: {motivo}", trace)
 
     question = _resolve_question(inp, transcript)
     if inp.audio_role == "pregunta" and inp.audio is not None and transcript is None and not inp.question.strip():
@@ -609,7 +643,8 @@ def analyze(
         trace,
         "Análisis (LLM)",
         lambda: _step_analysis(
-            providers, tariffs, question, retrieved, chart, context_transcript, texto_mercado, texto_sec
+            providers, tariffs, question, retrieved, chart_aportado, context_transcript, texto_mercado, texto_sec,
+            chart_generated
         ),
         fase,
     )
@@ -632,7 +667,7 @@ def analyze(
 
     return AnalysisResult(
         question, guard, document, retriever, chart, transcript,
-        tuple(trace), tuple(warnings), fase.now(), checks, market,
+        tuple(trace), tuple(warnings), fase.now(), checks, market, chart_generated,
     )
 
 
@@ -789,7 +824,11 @@ def answer_followup(
     try:
         respuesta = ask_structured(providers.llm, CHAT_SYSTEM, mensajes, ChatAnswer)
     except (StructuredOutputError, ProviderError) as exc:
-        paso = TraceStep("Chat de seguimiento", "—", time.perf_counter() - inicio, str(exc), ok=False)
+        gastado = getattr(exc, "cost_usd", None)
+        paso = TraceStep(
+            "Chat de seguimiento", "—", time.perf_counter() - inicio, str(exc), float(gastado or 0.0), ok=False,
+            cost_real=gastado is not None,
+        )
         raise PipelineError(str(exc), [paso]) from exc
 
     texto, violaciones = guard_text(respuesta.value.answer, "chat")

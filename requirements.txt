@@ -12,3 +12,4 @@ httpx2==2.13.1
 numpy==2.5.3; python_version >= "3.12"
 numpy==2.4.6; python_version < "3.12"  # numpy 2.5 exige Python 3.12+
 mutagen==1.47.0
+fpdf2==2.8.9

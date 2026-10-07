@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +27,7 @@ from finlens.ui.gantt import timeline
 THREE_URL = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
 FONTS_URL = "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap"
 PLAYBACK_S = 7.0  # la ejecución real se reescala a esta duración de reproducción
-HEIGHT = 470
+HEIGHT = 540
 _JS_PATH = Path(__file__).parent / "static" / "brain.js"
 
 INPUTS = (
@@ -81,6 +81,7 @@ def build_brain(
     providers: Any,
     *,
     aportes: Collection[str],
+    detalles: Mapping[str, str] | None = None,
     result: Any = None,
     media: Any = None,
     with_market: bool = False,
@@ -117,8 +118,8 @@ def build_brain(
         if not incluido(id_):
             continue
         activo = clave in aportes
-        entradas.append(nodo(id_, label, "input", value="1.000" if activo else "0.000",
-                             sub="aportado" if activo else "no aportado",
+        valor = (detalles or {}).get(clave, "aportado") if activo else "—"
+        entradas.append(nodo(id_, label, "input", value=valor, sub="" if activo else "no aportado",
                              state="on" if activo else "off", t0=0.1, t1=0.6))
     capas.append({"title": "Capa 0 · Entrada", "nodes": entradas})
 
@@ -200,25 +201,48 @@ def brain_html(data: dict[str, Any]) -> str:
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="{FONTS_URL}">
 <style>
 html,body{{margin:0;height:100%;background:#0c1416;overflow:hidden;font-family:'IBM Plex Mono',Consolas,monospace}}
-#brain{{position:absolute;inset:0;background:radial-gradient(120% 90% at 55% 40%,#11292e 0%,#0c1719 55%,#12110e 100%)}}
+#brain{{position:absolute;inset:0;background:radial-gradient(120% 90% at 55% 40%,#11292e 0%,#0c1719 55%,#12110e 100%);
+  cursor:pointer;touch-action:pan-y;outline:none}}
+#brain.is-active{{cursor:grab;touch-action:none}} #brain.is-active:active{{cursor:grabbing}}
+#brain:focus-visible{{box-shadow:inset 0 0 0 2px #c8a24a}}
 #brain canvas{{display:block;width:100%;height:100%}}
+#labels{{position:absolute;inset:0;pointer-events:none;overflow:hidden}}
+.lbl{{position:absolute;left:0;top:0;transform-origin:0 50%;white-space:nowrap;will-change:transform;
+  text-shadow:0 0 4px #071012,0 0 10px #071012;transition:opacity .2s ease-out}}
+.lbl .row{{display:flex;gap:7px;align-items:baseline;max-width:170px;overflow:hidden}}
+.lbl .t{{font:600 13px/1.25 'IBM Plex Mono',monospace;color:#f3eee4}}
+.lbl .v{{font:600 11.5px/1.3 'IBM Plex Mono',monospace;color:#d6e6e6;flex:none}}
+.lbl .s{{font:400 11px/1.3 'IBM Plex Mono',monospace;color:#a9c0c1;overflow:hidden;text-overflow:ellipsis;min-width:0}}
+.lbl.k-output .t{{font-size:14px}}
+.lbl[data-s=on].k-output .t,.lbl[data-s=on].k-output .v,.lbl[data-s=run] .t,.lbl[data-s=run] .v{{color:#e2bd5e}}
+.lbl[data-s=fail] .v,.lbl[data-s=fail] .t{{color:#f08a83}} .lbl[data-s=sim] .v{{color:#7fcad3}}
+.hdr{{position:absolute;left:0;top:0;white-space:nowrap;text-align:center;pointer-events:none;text-shadow:0 0 6px #071012}}
+.hdr .ht{{font:600 11px/1.3 'IBM Plex Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:#7fd0da}}
+.hdr .hs{{font:400 10.5px/1.3 'IBM Plex Mono',monospace;color:#a9c0c1}}
 .hud{{position:absolute;left:16px;right:16px;display:flex;justify-content:space-between;gap:12px;pointer-events:none;
-  font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:#bdb4a2}}
+  font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:#cfc6b4}}
 .top{{top:12px}} .bot{{bottom:12px;align-items:flex-end}}
 .hud b{{color:#c8a24a;font-weight:600}} #hud-h{{color:#ede6d6}}
-#replay{{pointer-events:auto;font:600 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.16em;text-transform:uppercase;
-  color:#12110e;background:#c8a24a;border:0;padding:8px 12px;cursor:pointer}}
-#replay:hover{{background:#d8b45c}} #replay:focus-visible{{outline:2px solid #ede6d6;outline-offset:2px}}
-#replay[hidden]{{display:none}}
+.ctl{{display:flex;gap:6px;pointer-events:auto;align-items:center}}
+.ctl button{{font:600 12px/1 'IBM Plex Mono',monospace;color:#ede6d6;background:rgba(12,23,25,.85);border:1px solid #3d6f75;
+  min-width:30px;height:30px;padding:0 9px;cursor:pointer;letter-spacing:.08em}}
+.ctl button:hover{{border-color:#c8a24a;color:#e2bd5e}}
+.ctl button:focus-visible,#replay:focus-visible{{outline:2px solid #ede6d6;outline-offset:2px}}
+#replay{{color:#12110e;background:#c8a24a;border:0;text-transform:uppercase}}
+#replay:hover{{background:#d8b45c;color:#12110e}} #replay[hidden]{{display:none}}
+#hint{{font-size:10px;letter-spacing:.06em;text-transform:none;color:#a9c0c1;max-width:52%}}
 .leg span{{margin-right:14px;white-space:nowrap}} .leg i{{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:1px}}
 #bar{{position:absolute;left:0;bottom:0;height:2px;background:#c8a24a;width:0}}
-@media (max-width:560px){{.leg{{display:none}} .hud{{font-size:9.5px}}}}
+@media (max-width:560px){{.leg{{display:none}} .hud{{font-size:9.5px}} #hint{{max-width:46%}}}}
 </style></head><body>
-<div id="brain" role="img" aria-label="Red de modelos de FinLens: entradas, modelos y salidas de esta sesión"></div>
+<div id="brain" tabindex="0" role="img" aria-label="Red de modelos de FinLens: entradas, modelos y salidas de esta sesión. Teclas: más y menos para zoom, flechas para girar, cero para centrar.">
+<div id="labels" aria-hidden="true"></div></div>
 <div class="hud top"><div><b>§0 Cerebro</b> · <span id="hud-h"></span></div><div id="hud-t"></div></div>
-<div class="hud bot"><div class="leg"><span><i style="background:#ede6d6"></i>entrada / modelo</span>
-<span><i style="background:#c8a24a"></i>en curso · salida</span><span><i style="background:#58aeb9"></i>simulado</span>
-<span><i style="background:#e8716a"></i>fallo</span></div><button id="replay" type="button" hidden>Reproducir ▸</button></div>
+<div class="hud bot"><div><div class="leg"><span><i style="background:#ede6d6"></i>entrada / modelo</span>
+<span><i style="background:#c8a24a"></i>en curso · salida</span><span><i style="background:#66bcc6"></i>simulado</span>
+<span><i style="background:#e8716a"></i>fallo</span></div><div id="hint"></div></div>
+<div class="ctl"><button id="zout" type="button" aria-label="Alejar">−</button><button id="zin" type="button" aria-label="Acercar">+</button>
+<button id="zreset" type="button" aria-label="Centrar la vista">⟲</button><button id="replay" type="button" hidden>Reproducir ▸</button></div></div>
 <div id="bar"></div>
 <script type="application/json" id="fl-data">{datos}</script>
 <script>window.FL_THREE_URL = {json.dumps(THREE_URL)};</script>

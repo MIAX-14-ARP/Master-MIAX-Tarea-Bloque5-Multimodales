@@ -9,7 +9,7 @@ from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from finlens.providers.base import LLMProvider, Message, TextResult, VisionProvider
+from finlens.providers.base import LLMProvider, Message, ProviderError, TextResult, VisionProvider
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -20,7 +20,17 @@ _Invocador = Callable[["tuple[str, str] | None"], TextResult]
 
 
 class StructuredOutputError(Exception):
-    """El modelo no devolvió un JSON válido tras el reintento. El mensaje es apto para la UI."""
+    """El modelo no devolvió un JSON válido tras el reintento. El mensaje es apto para la UI.
+
+    `calls` son las llamadas ya hechas y `cost_usd` el coste real acumulado de las que lo informaron
+    (None si ninguna): las llamadas fallidas también se cobran y no deben perderse de la traza.
+    """
+
+    def __init__(self, message: str = "", calls: tuple[TextResult, ...] = ()) -> None:
+        super().__init__(message)
+        self.calls = calls
+        reales = [c.cost_usd for c in calls if c.cost_usd is not None]
+        self.cost_usd: float | None = sum(reales) if reales else None
 
 
 @dataclass(frozen=True)
@@ -66,7 +76,13 @@ def _run(model_cls: type[T], invoke: _Invocador) -> StructuredResult[T]:
     llamadas: list[TextResult] = []
     feedback: tuple[str, str] | None = None
     for _ in range(2):
-        resultado = invoke(feedback)
+        try:
+            resultado = invoke(feedback)
+        except ProviderError as exc:  # el reintento falló: el primer intento ya se cobró
+            previo = sum(c.cost_usd for c in llamadas if c.cost_usd is not None)
+            if previo:
+                exc.cost_usd = (exc.cost_usd or 0.0) + previo
+            raise
         llamadas.append(resultado)
         try:
             return StructuredResult(parse_model(model_cls, resultado.text), tuple(llamadas))
@@ -75,7 +91,8 @@ def _run(model_cls: type[T], invoke: _Invocador) -> StructuredResult[T]:
     motivo = feedback[1] if feedback else "sin respuesta"
     raise StructuredOutputError(
         f"El modelo no devolvió una respuesta estructurada válida tras 2 intentos ({motivo}). "
-        "Inténtalo de nuevo o simplifica la consulta."
+        "Inténtalo de nuevo o simplifica la consulta.",
+        tuple(llamadas),
     )
 
 

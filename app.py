@@ -4,6 +4,7 @@ import dataclasses
 import hmac
 import logging
 import os
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -32,12 +33,7 @@ from finlens.providers.registry import build_mock_providers, build_providers  # 
 from finlens.sources.registry import PREFIJO_ACCION, PREFIJO_CRIPTO, build_sources  # noqa: E402
 from finlens.ui import brain, pipeline_map, theme, views  # noqa: E402
 from finlens.ui import components as ui  # noqa: E402
-from finlens.ui.demo_samples import (  # noqa: E402
-    DEMO_QUESTION,
-    demo_audio_wav,
-    demo_chart_png,
-    demo_pdf,
-)
+from finlens.ui.casos import FORMATOS, TICKERS_EJEMPLO, casos  # noqa: E402
 from finlens.ui.live import run_live  # noqa: E402
 
 log = logging.getLogger("finlens.app")
@@ -51,7 +47,7 @@ SUGERENCIAS = (
 HAS_COMPOSE = "illustration" in {f.name for f in dataclasses.fields(MediaResult)}
 # Datos de mercado (spec 06 §10): la UI se activa sola cuando el backend añade `ticker` a AnalysisInput.
 MARKET = "ticker" in {f.name for f in dataclasses.fields(AnalysisInput)}
-DEMO_TICKER = "ACME"
+PROPIO = "propio"
 RANGOS = {"1mo": "1 mes", "3mo": "3 meses", "6mo": "6 meses", "1y": "1 año", "2y": "2 años"}
 # Mercado del ticker: «Auto» deja decidir al registro; los otros fuerzan la fuente con su prefijo.
 MERCADOS = {"Auto": "", "Cripto · Hyperliquid": PREFIJO_CRIPTO, "Acción · Yahoo + SEC": PREFIJO_ACCION}
@@ -78,86 +74,150 @@ class Formulario:
     medios: tuple[bool, bool]
     omitidos: frozenset[str]
     aportes: frozenset[str]
+    detalles: dict[str, str] = dataclasses.field(default_factory=dict)  # entrada → «1,5 MB», «BTC · 6 meses»…
 
 
-def _ranura_mercado(usar_ejemplos: bool) -> tuple[str, str]:
+def _tamano(n: int) -> str:
+    return f"{n / 1_048_576:.1f} MB" if n >= 1_048_576 else f"{max(1, round(n / 1024))} KB"
+
+
+def _cab(lugar, fragmento: str) -> None:
+    lugar.markdown(fragmento, unsafe_allow_html=True)
+
+
+def _ranura_mercado(caso: str, ticker_caso: str) -> tuple[str, str, str]:
     """Ranura D: ticker (acciones vía Yahoo + SEC, cripto vía Hyperliquid), mercado y rango.
 
     El ticker se valida contra la fuente elegida: si no cotiza ahí, el paso «Datos de mercado» lo dice.
     """
+    cab = st.empty()
     ticker = st.text_input(
-        "Ticker", value=DEMO_TICKER if usar_ejemplos else "", placeholder="ITX.MC · AAPL · BTC",
-        label_visibility="collapsed", max_chars=20,
+        "Ticker", value=ticker_caso, placeholder="ITX.MC · AAPL · BTC",
+        label_visibility="collapsed", max_chars=20, key=f"ticker_{caso}",
     ).strip().upper()
     mercado = st.radio(
-        "Mercado", list(MERCADOS), horizontal=True, label_visibility="collapsed",
+        "Mercado", list(MERCADOS), horizontal=True, label_visibility="collapsed", key=f"mercado_{caso}",
         help="Auto: BTC, ETH… son cripto; un ticker de la SEC es acción; si no, Hyperliquid. "
         "Elige el mercado si el ticker existe en los dos (p. ej. BTC también es un ETF).",
     )
-    rango = st.selectbox("Rango", list(RANGOS), index=2, format_func=RANGOS.get, label_visibility="collapsed")
+    rango = st.selectbox("Rango", list(RANGOS), index=2, format_func=RANGOS.get, label_visibility="collapsed",
+                         key=f"rango_{caso}")
     etiqueta = f"{ticker} · {mercado} · {RANGOS[rango]}" if mercado != "Auto" else f"{ticker} · {RANGOS[rango]}"
-    views.html(ui.slot("D", "Mercado", "Ticker: datos reales, técnicos y SEC · opcional",
-                       nombre=etiqueta if ticker else None, ejemplo=usar_ejemplos and bool(ticker)))
-    return (MERCADOS[mercado] + ticker if ticker else ""), rango
+    _cab(cab, ui.slot("D", "Mercado", "Ticker: datos reales, técnicos y SEC · opcional",
+                       nombre=etiqueta if ticker else None, ejemplo=caso != PROPIO and bool(ticker)))
+    return (MERCADOS[mercado] + ticker if ticker else ""), rango, f"{ticker} · {RANGOS[rango]}"
+
+
+def _ayuda_materiales() -> None:
+    """Formatos aceptados y descarga de los materiales de ejemplo (para probar con archivos propios)."""
+    with st.expander("Formatos aceptados y materiales de ejemplo para descargar"):
+        filas = "".join(f"<li><b>{ui.esc(k)}</b> {ui.esc(v)}</li>" for k, v in FORMATOS)
+        views.html(f'<ul class="fl-formats">{filas}</ul><p class="fl-note-sm">Tickers de ejemplo: '
+                   f'{ui.esc(" · ".join(TICKERS_EJEMPLO))}. Los archivos se procesan en esta sesión y no se guardan '
+                   "en el servidor.</p>")
+        for caso in casos().values():
+            if not caso.archivos:
+                continue
+            columnas = st.columns([2, 1, 1, 1], vertical_alignment="center")
+            columnas[0].markdown(f"**{caso.titulo}**")
+            for col, archivo in zip(columnas[1:], caso.archivos, strict=False):
+                tipo = {"application/pdf": "Informe PDF", "image/png": "Gráfico PNG"}.get(archivo.mime, "Audio")
+                col.download_button(f"{tipo} · {_tamano(len(archivo.datos))}", archivo.datos, help=archivo.nombre,
+                                    file_name=archivo.nombre, mime=archivo.mime, on_click="ignore",
+                                    key=f"dl_{caso.clave}_{archivo.nombre}", width="stretch")
+
+
+def _grabacion(grabacion) -> None:
+    """La pregunta grabada: dónde va, escucharla y descargarla."""
+    views.html('<p class="fl-note-sm">Tu grabación se usa solo como pregunta de este análisis: se transcribe y '
+               "no se guarda en el servidor (se descarta al cerrar la pestaña).</p>")
+    if grabacion is not None:
+        st.audio(grabacion.getvalue(), format=grabacion.type or "audio/wav")
+        st.download_button("Descargar grabación", grabacion.getvalue(), file_name="pregunta_finlens.wav",
+                           mime=grabacion.type or "audio/wav", on_click="ignore", key="dl_grabacion")
 
 
 def read_inputs(providers: Providers) -> Formulario:
     """Formulario en ranuras (A informe, B gráfico, C audio y, si hay datos de mercado, D ticker)."""
     obligatorio = "informe en PDF o ticker: al menos uno" if MARKET else "solo el informe en PDF es obligatorio"
     views.html(ui.section("1", "Materiales", obligatorio))
-    usar_ejemplos = st.toggle(
-        "Usar materiales de ejemplo (ficticios: informe, gráfico de velas y audio)",
-        value=providers.is_demo,
-        help="Informe anual ficticio de ACME Corp (4 páginas), gráfico de velas y audio de demostración.",
+    opciones = [PROPIO, *casos()]
+    caso_id = st.radio(
+        "Empezar con", opciones, horizontal=True, index=opciones.index("ficticio") if providers.is_demo else 0,
+        format_func=lambda c: "Mis archivos" if c == PROPIO else casos()[c].titulo, key="caso",
+        help="Los casos de ejemplo precargan los materiales; con modelos reales también tienen coste.",
     )
+    caso = casos().get(caso_id)
+    if caso is not None:
+        views.html(f'<p class="fl-case">{ui.esc(caso.descripcion)}</p>')
+    _ayuda_materiales()
+
     columnas = st.columns(4 if MARKET else 3, gap="medium" if MARKET else "large")
     col_a, col_b, col_c = columnas[:3]
     pdf = chart = audio = grabacion = None
-    ticker, rango = "", "6mo"
+    ticker, rango, ticker_det = "", "6mo", ""
     with col_a:
-        if usar_ejemplos:
-            views.html(ui.slot("A", "Informe anual", "PDF con texto", nombre="acme_informe_2025.pdf", ejemplo=True))
+        cab = st.empty()  # cabecera de la ranura encima de sus controles
+        if caso is not None:
+            _cab(cab, ui.slot("A", "Informe anual", "PDF con texto", nombre=caso.pdf.nombre if caso.pdf else None,
+                               tamano=len(caso.pdf.datos) if caso.pdf else None, ejemplo=caso.pdf is not None,
+                               vacio="no incluido en este caso"))
         else:
-            pdf = st.file_uploader("Informe (PDF)", type=["pdf"], label_visibility="collapsed")
-            views.html(ui.slot("A", "Informe anual", "PDF con texto" + ("" if MARKET else " · obligatorio"),
+            pdf = st.file_uploader("Informe (PDF)", type=["pdf"], label_visibility="collapsed", max_upload_size=30)
+            _cab(cab, ui.slot("A", "Informe anual", "PDF con texto seleccionable" + ("" if MARKET else " · obligatorio"),
                                nombre=pdf.name if pdf else None, tamano=pdf.size if pdf else None,
                                vacio="pendiente" if MARKET else "pendiente · obligatorio"))
     with col_b:
-        if usar_ejemplos:
-            miniatura = base64.b64encode(demo_chart_png()).decode()
-            views.html(ui.slot("B", "Gráfico de cotización", "Velas japonesas · PNG o JPG", nombre="velas_acme.png", ejemplo=True)
-                       + f'<img class="fl-thumb" src="data:image/png;base64,{miniatura}" alt="Gráfico de velas de ejemplo">')
+        cab = st.empty()  # cabecera de la ranura encima de sus controles
+        if caso is not None:
+            miniatura = ""
+            if caso.chart is not None:
+                b64 = base64.b64encode(caso.chart.datos).decode()
+                miniatura = f'<img class="fl-thumb" src="data:image/png;base64,{b64}" alt="Gráfico de velas del caso">'
+            _cab(cab, ui.slot("B", "Gráfico de cotización", "Velas japonesas · PNG o JPG",
+                               nombre=caso.chart.nombre if caso.chart else None, ejemplo=caso.chart is not None,
+                               vacio="se genera desde el ticker" if caso.ticker else "no incluido") + miniatura)
         else:
-            chart = st.file_uploader("Gráfico de cotización", type=["png", "jpg", "jpeg"], label_visibility="collapsed")
-            detalle = "Velas japonesas · opcional" + (" (con ticker se genera)" if MARKET else "")
-            views.html(ui.slot("B", "Gráfico de cotización", detalle,
+            chart = st.file_uploader("Gráfico de cotización", type=["png", "jpg", "jpeg"], label_visibility="collapsed",
+                                     max_upload_size=10)
+            detalle = "PNG o JPG · opcional" + (" (con ticker se genera)" if MARKET else "")
+            _cab(cab, ui.slot("B", "Gráfico de cotización", detalle,
                                nombre=chart.name if chart else None, tamano=chart.size if chart else None))
     with col_c:
+        cab = st.empty()  # cabecera de la ranura encima de sus controles
         rol = "conferencia"
-        if usar_ejemplos:
-            views.html(ui.slot("C", "Audio", "Earnings call o pregunta por voz", nombre="call_demo.wav", ejemplo=True))
+        grabando = False
+        if caso is not None:
+            _cab(cab, ui.slot("C", "Audio", "Earnings call o pregunta por voz",
+                               nombre=caso.audio.nombre if caso.audio else None, ejemplo=caso.audio is not None,
+                               vacio="no incluido en este caso"))
+            if caso.audio is not None:
+                st.audio(caso.audio.datos, format=caso.audio.mime)
         else:
             modos = ["Subir archivo", "Grabar pregunta"] if hasattr(st, "audio_input") else ["Subir archivo"]
             modo = st.radio("Origen del audio", modos, horizontal=True, label_visibility="collapsed")
-            if modo == "Grabar pregunta":
+            grabando = modo == "Grabar pregunta"
+            if grabando:
                 grabacion = st.audio_input("Graba tu pregunta", label_visibility="collapsed")
                 rol = "pregunta"
+                _grabacion(grabacion)
             else:
-                audio = st.file_uploader("Audio", type=["wav", "mp3", "m4a", "ogg", "webm"], label_visibility="collapsed")
+                audio = st.file_uploader("Audio", type=["wav", "mp3", "m4a", "ogg", "webm"], label_visibility="collapsed",
+                                         max_upload_size=25)
             fuente = grabacion or audio
-            views.html(ui.slot("C", "Audio", "Earnings call o pregunta por voz · opcional",
+            _cab(cab, ui.slot("C", "Audio", "WAV, MP3, M4A… · opcional",
                                nombre=fuente.name if fuente else None, tamano=fuente.size if fuente else None))
-        if grabacion is None:
+        if not grabando and (caso is None or caso.audio is not None):
             rol = st.radio(
                 "El audio es…", ["conferencia", "pregunta"], horizontal=True,
                 format_func=lambda r: "la conferencia de resultados" if r == "conferencia" else "mi pregunta por voz",
             )
     if MARKET:
         with columnas[3]:
-            ticker, rango = _ranura_mercado(usar_ejemplos)
+            ticker, rango, ticker_det = _ranura_mercado(caso_id, caso.ticker if caso else "")
 
     pregunta = st.text_area(
-        "Tu pregunta al informe", value=DEMO_QUESTION if usar_ejemplos else "",
+        "Tu pregunta al informe", value=caso.question if caso else "", key=f"pregunta_{caso_id}",
         placeholder="Déjala vacía para un resumen general, o grábala por voz en la ranura C.",
     )
     op1, op2, boton = st.columns([1, 1, 1], vertical_alignment="center")
@@ -166,29 +226,33 @@ def read_inputs(providers: Providers) -> Formulario:
     pulsado = boton.button("Analizar", type="primary", width="stretch")
 
     mercado = {"ticker": ticker, "market_range": rango} if MARKET else {}
-    fuente = grabacion or audio
-    if usar_ejemplos:
-        entrada: AnalysisInput | None = AnalysisInput(
-            pdf=demo_pdf(), question=pregunta, chart=demo_chart_png(),
-            chart_mime="image/png", audio=demo_audio_wav(), audio_name="demo.wav", audio_role=rol, **mercado,
-        )
-    elif pdf is not None or ticker:
-        entrada = AnalysisInput(
-            pdf=pdf.getvalue() if pdf else b"", question=pregunta,
-            chart=chart.getvalue() if chart else None, chart_mime=chart.type if chart else "image/png",
-            audio=fuente.getvalue() if fuente else None,
-            audio_name=(fuente.name or "pregunta.wav") if fuente else "audio", audio_role=rol, **mercado,
-        )
+    if caso is not None:
+        pdf_b, chart_b = (caso.pdf.datos if caso.pdf else b""), (caso.chart.datos if caso.chart else None)
+        chart_mime = caso.chart.mime if caso.chart else "image/png"
+        audio_b, audio_nombre = (caso.audio.datos, caso.audio.nombre) if caso.audio else (None, "audio")
     else:
-        entrada = None
+        fuente = grabacion or audio
+        pdf_b, chart_b = (pdf.getvalue() if pdf else b""), (chart.getvalue() if chart else None)
+        chart_mime = chart.type if chart else "image/png"
+        audio_b = fuente.getvalue() if fuente else None
+        audio_nombre = (fuente.name or "pregunta.wav") if fuente else "audio"
+    entrada: AnalysisInput | None = None
+    if pdf_b or ticker:
+        entrada = AnalysisInput(pdf=pdf_b, question=pregunta, chart=chart_b, chart_mime=chart_mime, audio=audio_b,
+                                audio_name=audio_nombre, audio_role=rol, **mercado)
 
-    aportes = set()
-    if entrada is not None:
-        aportes |= {k for k, v in (("pdf", entrada.pdf), ("chart", entrada.chart), ("audio", entrada.audio)) if v}
+    detalles: dict[str, str] = {}
+    if pdf_b:
+        detalles["pdf"] = _tamano(len(pdf_b))
+    if chart_b:
+        detalles["chart"] = _tamano(len(chart_b))
+    if audio_b:
+        detalles["audio"] = ("voz · " if rol == "pregunta" else "") + _tamano(len(audio_b))
     if pregunta.strip() or rol == "pregunta":
-        aportes.add("question")
+        detalles["question"] = f"{len(pregunta.strip())} car." if pregunta.strip() else "por voz"
     if ticker:
-        aportes |= {"ticker", "sec"}
+        detalles["ticker"] = ticker_det
+        detalles["sec"] = "si cotiza en EE. UU."
     omitidos = set()
     if entrada is not None:
         if entrada.chart is None and not ticker:
@@ -203,7 +267,7 @@ def read_inputs(providers: Providers) -> Formulario:
         omitidos.add("tts")
     if not con_imagen:
         omitidos.update({"prompt", "image", "compose"})
-    return Formulario(entrada, pulsado, (con_audio, con_imagen), frozenset(omitidos), frozenset(aportes))
+    return Formulario(entrada, pulsado, (con_audio, con_imagen), frozenset(omitidos), frozenset(detalles), detalles)
 
 
 # --- §2 Cadena de modelos -------------------------------------------------------------------
@@ -322,6 +386,7 @@ def show_results(providers: Providers, tariffs: Tariffs, mapa) -> None:
                live=None if media else (), live_phase=None if media else 2, en_vivo=media is None)
 
     views.html(ui.section("3", "Nota de análisis", "fuentes citadas en cada afirmación"))
+    pdf_nota(result, media)
     views.show_warnings(result.warnings)
     mercado = getattr(result, "market", None)
     nombres = ["Informe", "Entradas leídas", *(["Mercado"] if mercado is not None else []),
@@ -330,7 +395,7 @@ def show_results(providers: Providers, tariffs: Tariffs, mapa) -> None:
     with pestanas["Informe"]:
         views.show_report(result)
     with pestanas["Entradas leídas"]:
-        views.show_inputs_read(result)
+        views.show_inputs_read(result, voz=st.session_state.get("detalles", {}).get("audio", "").startswith("voz"))
     if mercado is not None:
         with pestanas["Mercado"]:
             views.show_market(mercado)
@@ -360,6 +425,40 @@ def show_results(providers: Providers, tariffs: Tariffs, mapa) -> None:
         st.rerun()
 
 
+def _nombre_pdf(result: AnalysisResult) -> str:
+    mercado = getattr(result, "market", None)
+    simbolo = getattr(getattr(mercado, "series", None), "symbol", "") or "informe"
+    limpio = re.sub(r"[^A-Za-z0-9.-]+", "-", simbolo).strip("-") or "informe"
+    return f"finlens_{limpio}_{date.today():%Y%m%d}.pdf"
+
+
+def pdf_nota(result: AnalysisResult, media: MediaResult | None) -> None:
+    """«Descargar nota en PDF»: se genera una vez por análisis y estado del chat (caché en la sesión)."""
+    chat = [(m["role"], m["content"]) for m in st.session_state.get("chat", [])]
+    clave = (st.session_state.get("clave"), len(chat), media is not None)
+    cache = st.session_state.setdefault("pdf_nota", {})
+    if clave not in cache:
+        try:
+            cache.clear()
+            from finlens.export.report_pdf import build_report_pdf  # perezoso: un fallo aquí no tumba la app
+
+            cache[clave] = build_report_pdf(result, media, chat)
+        except Exception:  # la exportación nunca debe tumbar la nota
+            log.exception("No se pudo generar el PDF de la nota")
+            cache[clave] = None
+    datos = cache[clave]
+    _, derecha = st.columns([3, 1], vertical_alignment="center")
+    if datos is None:
+        derecha.caption("No se pudo generar el PDF de la nota; el análisis sigue disponible en pantalla.")
+        return
+    derecha.download_button(
+        "Descargar nota en PDF", datos, file_name=_nombre_pdf(result), mime="application/pdf",
+        on_click="ignore", type="secondary", icon=":material/download:", width="stretch",
+        help="Informe, cifras con sus sellos, contraste, traza y chat de esta sesión."
+        + ("" if media is not None else " Los medios se añadirán cuando terminen."),
+    )
+
+
 def show_brain(providers: Providers, form: Formulario) -> None:
     """§0: reposo con las entradas elegidas; reproducción de la traza cuando hay informe y medios."""
     result = st.session_state.get("result")
@@ -367,6 +466,7 @@ def show_brain(providers: Providers, form: Formulario) -> None:
     replay = result is not None and media is not None and not st.session_state.get("error")
     datos = brain.build_brain(
         providers, aportes=st.session_state.get("aportes", form.aportes) if replay else form.aportes,
+        detalles=st.session_state.get("detalles", form.detalles) if replay else form.detalles,
         result=result if replay else None, media=media if replay else None,
         with_market=MARKET, with_compose=HAS_COMPOSE,
     )
@@ -430,6 +530,7 @@ def main() -> None:
     if pulsado and entrada is not None:
         st.session_state.omitidos = omitidos
         st.session_state.aportes = form.aportes
+        st.session_state.detalles = form.detalles
         run_analysis(entrada, providers, tariffs, settings, medios, mapa)
 
     error: PipelineError | None = st.session_state.get("error")

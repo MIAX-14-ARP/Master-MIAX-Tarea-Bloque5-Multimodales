@@ -5,7 +5,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from finlens.config import get_settings
-from finlens.ui import demo_samples
+from finlens.ui import casos
 
 APP = str(Path(__file__).resolve().parents[1] / "app.py")
 PESTANAS = ["Informe", "Entradas leídas", "Audio e infografía", "Chat", "Traza de modelos"]
@@ -47,7 +47,7 @@ def test_la_pantalla_inicial_ofrece_tres_ranuras_y_ejemplos_en_modo_demo() -> No
     contenido = textos(at)
     assert "Modo demo" in contenido
     assert all(r in contenido for r in ("Informe anual", "Gráfico de cotización", "Audio"))
-    assert at.toggle[0].value is True  # materiales de ejemplo activados por defecto en demo
+    assert at.radio(key="caso").value == "ficticio"  # caso de ejemplo preseleccionado en demo
     assert boton_analizar(at).label == "Analizar"
     assert not at.tabs and 'class="fl-map"' not in contenido  # sin resultados ni mapa todavía
 
@@ -73,15 +73,17 @@ def test_flujo_completo_muestra_mapa_informe_traza_y_medios() -> None:
     assert "no constituye asesoramiento" in contenido.lower()
     media = at.session_state["media"]
     assert media.audio is not None and media.image is not None
-    assert len(at.get("audio")) == 1
+    assert len(at.get("audio")) == 2  # audio del caso de ejemplo + resumen hablado
     assert at.get("vega_lite_chart") or at.get("arrow_vega_lite_chart")  # Gantt de la traza
 
 
 def test_la_traza_de_la_ui_incluye_los_pasos_de_texto_audio_imagen() -> None:
     at = analizar(arrancar())
     filas = {fila["Paso"].replace(" ⇉", "") for fila in at.table[-1].value.to_dict("records")}
-    assert {"Ingesta e índice", "Lectura del gráfico", "Transcripción de audio", "Análisis (LLM)",
+    assert {"Ingesta e índice", "Transcripción de audio", "Análisis (LLM)",
             "Resumen en audio", "Prompt de infografía", "Generación de infografía"} <= filas
+    # con ticker hay dos lecturas ("(generado)" y "(aportado)"); sin ticker, "Lectura del gráfico" a secas
+    assert any(f.startswith("Lectura del gráfico") for f in filas)
 
 
 def test_chat_de_seguimiento() -> None:
@@ -112,7 +114,7 @@ def test_repetir_el_mismo_analisis_usa_la_cache() -> None:
 
 def test_sin_pdf_se_pide_el_informe() -> None:
     at = arrancar()
-    at.toggle[0].set_value(False).run()
+    at.radio(key="caso").set_value("propio").run()
     at = analizar(at)
     assert not at.exception
     assert "al menos el informe" in textos(at)
@@ -120,7 +122,8 @@ def test_sin_pdf_se_pide_el_informe() -> None:
 
 
 def test_un_pdf_invalido_muestra_el_error_y_la_traza_hasta_el_fallo(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(demo_samples, "demo_pdf", lambda: b"esto no es un PDF")
+    monkeypatch.setattr(casos, "demo_pdf", lambda: b"esto no es un PDF")
+    monkeypatch.setattr(casos, "casos", casos.casos.__wrapped__)  # sin la caché de los casos
     at = analizar(arrancar())
     assert not at.exception
     contenido = textos(at)
@@ -137,8 +140,8 @@ def test_con_claves_la_app_arranca_con_apis_reales_y_pide_los_archivos(monkeypat
     assert not at.exception
     contenido = textos(at)
     assert "Modo demo" not in contenido and "fl-prov__cell is-mock" not in contenido
-    assert [t.label for t in at.toggle][1:] == ["Generar resumen en audio", "Generar infografía"]
-    assert at.toggle[0].value is False  # con APIs reales los ejemplos no se usan por defecto
+    assert [t.label for t in at.toggle] == ["Generar resumen en audio", "Generar infografía"]
+    assert at.radio(key="caso").value == "propio"  # con APIs reales los ejemplos no se usan por defecto
     at = analizar(at)  # sin PDF no se llama a ninguna API
     assert "al menos el informe" in textos(at)
 
@@ -152,20 +155,20 @@ def test_la_traza_muestra_los_tokens_de_los_pasos_con_llm() -> None:
 
 def test_se_puede_omitir_el_audio_y_la_infografia() -> None:
     at = arrancar()
-    at.toggle[1].set_value(False)  # audio
-    at.toggle[2].set_value(False)  # infografía
+    at.toggle[0].set_value(False)  # audio
+    at.toggle[1].set_value(False)  # infografía
     at = analizar(at)
     assert not at.exception
     media = at.session_state["media"]
     assert media.audio is None and media.image is None and media.audio_skipped and media.image_skipped
-    assert media.trace == () and not at.get("audio")
+    assert media.trace == () and len(at.get("audio")) == 1  # solo el del caso de ejemplo
     assert any(c.value == "No solicitado." for c in at.caption)
     assert "st-omitido" in textos(at)  # el mapa marca los nodos no solicitados
 
 
 def test_omitir_solo_la_infografia_mantiene_el_audio() -> None:
     at = arrancar()
-    at.toggle[2].set_value(False)
+    at.toggle[1].set_value(False)
     media = analizar(at).session_state["media"]
     assert media.audio is not None and media.image is None and media.image_skipped
     assert [s.step for s in media.trace] == ["Resumen en audio"] and not media.trace[0].parallel
@@ -173,10 +176,19 @@ def test_omitir_solo_la_infografia_mantiene_el_audio() -> None:
 
 def test_solo_ticker_sin_pdf_analiza_con_datos_de_mercado() -> None:
     at = arrancar()
-    at.toggle[0].set_value(False).run()
+    at.radio(key="caso").set_value("propio").run()
     at.text_input[0].set_value("AAPL").run()
     at = analizar(at)
     assert not at.exception and at.session_state["error"] is None
     assert "Mercado" in [t.label for t in at.tabs]
     contenido = textos(at)
     assert "Sin PDF" in contenido and "La IA vio" in contenido
+
+
+def test_tras_el_flujo_demo_se_puede_descargar_la_nota_en_pdf() -> None:
+    at = analizar(arrancar())
+    assert not at.exception
+    botones = [b for b in at.get("download_button") if "nota en PDF" in str(b.proto.label)]
+    assert botones, "falta el botón «Descargar nota en PDF»"
+    datos = next(iter(at.session_state["pdf_nota"].values()))
+    assert datos and datos.startswith(b"%PDF")

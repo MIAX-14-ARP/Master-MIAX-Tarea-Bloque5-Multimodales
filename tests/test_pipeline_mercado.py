@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import pytest
 
+from _pdf import pdf_minimo
 from finlens.domain.cost import Tariffs
 from finlens.domain.grounding import check_figures
 from finlens.domain.ingest import Chunk, IngestedDocument
@@ -74,12 +75,14 @@ def test_cripto_incluye_derivados() -> None:
     assert r.market.fundamentals is None
 
 
-def test_con_grafico_subido_no_se_genera_otro_y_se_contrasta() -> None:
+def test_con_grafico_subido_y_ticker_se_genera_otro_para_el_contraste() -> None:
     from finlens.providers.media import solid_png
 
     r = correr(chart=solid_png(8, 8, (0, 0, 0)))
-    assert "Gráfico generado" not in pasos(r) and "Contraste visión ↔ datos" in pasos(r)
-    assert r.market is not None and r.market.chart_png is None
+    # con ticker se genera SIEMPRE el gráfico de la serie para el contraste; el subido se lee aparte
+    assert "Gráfico generado" in pasos(r) and "Contraste visión ↔ datos" in pasos(r)
+    assert "Lectura del gráfico (generado)" in pasos(r) and "Lectura del gráfico (aportado)" in pasos(r)
+    assert r.market is not None and r.market.chart_png is not None
 
 
 def test_con_pdf_y_ticker_se_combinan_ambas_fuentes() -> None:
@@ -252,3 +255,249 @@ def test_cifra_con_documento_y_sec_se_verifica_con_cualquiera() -> None:
     )
     (r,) = check_figures(AnalysisReport(summary="r", spoken_summary="r", key_figures=[cifra]), doc, fundamentals=fund)
     assert r.status == "verificada" and r.page is None
+
+
+def test_solo_ticker_sin_ningun_dato_detiene_el_analisis_sin_llamar_al_llm() -> None:
+    llamadas: list[str] = []
+
+    class LlmEspia(type(build_mock_providers().llm)):
+        def complete(self, system, messages, max_tokens=2048):
+            llamadas.append("llm")
+            return super().complete(system, messages, max_tokens)
+
+    class Rota:
+        def fetch_prices(self, symbol, rango="6mo"):
+            raise SourceError(f"Yahoo Finance no conoce el símbolo «{symbol}».")
+
+    class SecVacia:
+        def fetch_fundamentals(self, ticker):
+            return None
+
+    fuentes = MarketSources(Rota(), Rota(), MockDerivatives(), SecVacia(), demo=True)
+    providers = replace(build_mock_providers(), llm=LlmEspia())
+    with pytest.raises(PipelineError) as exc:
+        analyze(providers, TARIFAS, AnalysisInput(pdf=b"", ticker="XXXX"), sources=fuentes)
+    assert exc.value.message.startswith("No se pudieron obtener datos de mercado para «XXXX»")
+    assert "no conoce el símbolo" in exc.value.message
+    assert [s.step for s in exc.value.trace if not s.ok] == ["Datos de mercado"] and llamadas == []
+
+
+def test_con_pdf_o_audio_el_fallo_de_mercado_sigue_siendo_degradacion() -> None:
+    class Rota:
+        def fetch_prices(self, symbol, rango="6mo"):
+            raise SourceError("sin red")
+
+    class SecVacia:
+        def fetch_fundamentals(self, ticker):
+            return None
+
+    fuentes = MarketSources(Rota(), Rota(), MockDerivatives(), SecVacia(), demo=True)
+    r = analyze(build_mock_providers(), TARIFAS, AnalysisInput(pdf=pdf_minimo(), ticker="XXXX"), sources=fuentes)
+    assert r.market is None and any("sin red" in w for w in r.warnings)
+
+
+def test_open_interest_se_rotula_en_unidades_y_con_su_nocional_en_usd() -> None:
+    tech = compute_technicals(serie_demo())
+    d = MockDerivatives().fetch_derivatives("BTC")
+    texto = format_market(tech, d)
+    assert "open interest (ACME, unidades del activo)" in texto
+    assert f"{d.open_interest * d.mark_px:,.0f} USD nocional = OI × mark" in texto
+
+
+def test_el_coste_de_un_paso_fallido_llega_a_la_traza() -> None:
+    class Cobra(type(build_mock_providers().llm)):
+        def complete(self, system, messages, max_tokens=2048):
+            from finlens.providers.base import ProviderError
+
+            raise ProviderError("respuesta cortada", 0.05)
+
+    providers = replace(build_mock_providers(), llm=Cobra())
+    with pytest.raises(PipelineError) as exc:
+        analyze(providers, TARIFAS, AnalysisInput(pdf=b"", ticker="ACME"), sources=build_sources(demo=True))
+    fallido = next(s for s in exc.value.trace if s.step == "Análisis (LLM)")
+    assert not fallido.ok and fallido.cost_usd == 0.05 and fallido.cost_real
+
+
+def test_el_contraste_usa_la_lectura_del_grafico_generado_no_la_del_subido() -> None:
+    """Caso real: gráfico subido de otro periodo + ticker; el contraste debe salir de la lectura del generado."""
+    from finlens.domain.schemas import ChartReading
+    from finlens.providers.base import TextResult
+    from finlens.providers.media import solid_png
+
+    class Vision(type(build_mock_providers().vision)):
+        def describe_image(self, image, mime, prompt):
+            if image == SUBIDO:  # lectura de otro periodo: tendencia y niveles incompatibles con la serie
+                lectura = ChartReading(trend="bajista", description="Máximo en 9999 y soporte en 0,5 euros")
+            else:
+                lectura = ChartReading(trend=TECH.trend, description="Gráfico de la serie del ticker")
+            return TextResult(lectura.model_dump_json(), "mock-vision", 10, 10)
+
+    SUBIDO = solid_png(8, 8, (9, 9, 9))
+    TECH = compute_technicals(serie_demo())
+    capturado: list[str] = []
+
+    class Llm(type(build_mock_providers().llm)):
+        def complete(self, system, messages, max_tokens=2048):
+            capturado.append(messages[-1].content)
+            return super().complete(system, messages, max_tokens)
+
+    providers = replace(build_mock_providers(), vision=Vision(), llm=Llm())
+    r = analyze(providers, TARIFAS, AnalysisInput(pdf=b"", ticker="ACME", chart=SUBIDO), sources=build_sources(demo=True))
+    assert r.market is not None and r.market.chart_check is not None
+    assert r.market.chart_check.agreement_score == 1.0  # sin la lectura del subido: ninguna falsa discrepancia
+    assert all(i.verdict != "discrepa" for i in r.market.chart_check.items)
+    assert r.chart is not None and r.chart.trend == "bajista"  # la UI sigue mostrando la lectura del subido
+    assert r.chart_generated is not None and r.chart_generated.trend == TECH.trend
+    analista = next(c for c in capturado if "<mercado>" in c)
+    assert "[aportado por el usuario]" in analista and "[generado con los datos de mercado del ticker]" in analista
+    assert "periodos distintos" in analista
+
+
+def test_solo_grafico_generado_va_etiquetado_y_sin_aviso() -> None:
+    capturado: list[str] = []
+
+    class Llm(type(build_mock_providers().llm)):
+        def complete(self, system, messages, max_tokens=2048):
+            capturado.append(messages[-1].content)
+            return super().complete(system, messages, max_tokens)
+
+    providers = replace(build_mock_providers(), llm=Llm())
+    r = analyze(providers, TARIFAS, AnalysisInput(pdf=b"", ticker="ACME"), sources=build_sources(demo=True))
+    analista = next(c for c in capturado if "<mercado>" in c)
+    assert "[generado con los datos de mercado del ticker]" in analista and "periodos distintos" not in analista
+    assert r.chart is r.chart_generated
+
+
+# --- Relaciones calculadas, formato humano de matched, source y control de relaciones (ronda 5) ------
+
+from dataclasses import replace as _replace  # noqa: E402
+
+from finlens.domain.grounding import check_market_claims  # noqa: E402
+from finlens.domain.prompts import market_relations  # noqa: E402
+
+TECH_BTC = _replace(
+    compute_technicals(serie_demo()),
+    symbol="BTC", last_close=83_357.0, sma20=84_193.0, sma50=80_000.0, rsi14=75.0,
+    range_low=60_000.0, range_high=100_000.0,
+)
+
+
+def test_relaciones_explicitas_en_el_bloque_mercado() -> None:
+    d = MockDerivatives().fetch_derivatives("BTC")
+    texto = format_market(TECH_BTC, d)
+    assert "Relaciones ya calculadas" in texto
+    assert "El cierre (83,357.00) está por debajo de la SMA20 (84,193.00), a un 0.99% de distancia." in texto
+    assert "por encima de la SMA50 (80,000.00)" in texto
+    assert "La SMA20 está por encima de la SMA50 (configuración de cruce alcista)." in texto
+    assert "zona de sobrecompra" in texto and "posición en el rango: 58%" in texto
+    assert "El funding es " in texto
+    assert "por encima del mínimo del periodo" in texto
+
+
+def test_zonas_del_rsi_y_cruce_bajista_y_funding_negativo() -> None:
+    sobreventa = _replace(TECH_BTC, rsi14=20.0, sma20=70_000.0)
+    rel = " ".join(market_relations(sobreventa))
+    assert "zona de sobreventa" in rel and "cruce bajista" in rel
+    assert "zona neutral" in " ".join(market_relations(_replace(TECH_BTC, rsi14=50.0)))
+    neg = _replace(MockDerivatives().fetch_derivatives("BTC"), funding_annualized=-0.1, funding_hourly=-0.0001)
+    assert "negativo" in " ".join(market_relations(TECH_BTC, neg))
+
+
+def test_el_system_prompt_exige_usar_las_relaciones_literalmente() -> None:
+    from finlens.domain.prompts import ANALYST_SYSTEM
+
+    assert "Relaciones ya calculadas" in ANALYST_SYSTEM and "no infieras" in ANALYST_SYSTEM
+    assert "unidad del activo" in ANALYST_SYSTEM
+
+
+@pytest.mark.parametrize(
+    ("frase", "avisa"),
+    [
+        ("El precio se sitúa por encima de la SMA20 (84.193)", True),  # el caso real de BTC
+        ("El precio está por debajo de la SMA20.", False),
+        ("La cotización cierra por debajo de la media móvil de 50 sesiones.", True),
+        ("El cierre está por encima de la SMA50.", False),
+        ("The price is below the SMA 50.", True),
+        ("La SMA20 está por encima de la SMA50.", False),  # el sujeto no es el precio
+        ("El margen está por encima de la SMA20 del sector.", False),
+    ],
+)
+def test_control_de_relaciones_precio_media(frase: str, avisa: bool) -> None:
+    informe = AnalysisReport(summary=frase, spoken_summary="x")
+    assert bool(check_market_claims(informe, TECH_BTC)) is avisa
+
+
+def test_el_aviso_de_relacion_indica_lo_real_y_llega_al_resultado() -> None:
+    avisos = check_market_claims(
+        AnalysisReport(summary="El precio se sitúa por encima de la SMA20.", spoken_summary="x"), TECH_BTC
+    )
+    assert "por debajo de ella (84,193.00)" in avisos[0] and "83,357.00" in avisos[0]
+    assert check_market_claims(AnalysisReport(summary="x", spoken_summary="x"), None) == []
+
+
+def test_el_pipeline_avisa_si_el_informe_contradice_las_medias() -> None:
+    class Equivocado(type(build_mock_providers().llm)):
+        def complete(self, system, messages, max_tokens=2048):
+            res = super().complete(system, messages, max_tokens)
+            if "ESQUEMA: AnalysisReport" in system:
+                import json
+
+                d = json.loads(res.text)
+                tech = compute_technicals(serie_demo())
+                lado = "por debajo" if tech.last_close > tech.sma20 else "por encima"
+                d["summary"] = f"El precio se sitúa {lado} de la SMA20."
+                return replace(res, text=json.dumps(d))
+            return res
+
+    providers = replace(build_mock_providers(), llm=Equivocado())
+    r = analyze(providers, TARIFAS, AnalysisInput(pdf=b"", ticker="ACME"), sources=build_sources(demo=True))
+    assert any("Posible error de razonamiento" in w for w in r.warnings)
+    assert "relación(es) incoherente(s)" in pasos(r)["Verificación de cifras"].note
+
+
+def test_matched_de_mercado_es_legible_y_trae_la_fuente() -> None:
+    d = MockDerivatives().fetch_derivatives("BTC")
+    informe = AnalysisReport(
+        summary="r", spoken_summary="r",
+        key_figures=[
+            KeyFigure(name=n, value=v, citations=[Citation(origin="mercado", location="")])
+            for n, v in (
+                ("Último cierre", "83.357"), ("Rentabilidad", "15,9 %"), ("RSI", "75"),
+                ("Open interest", f"{d.open_interest:.0f} BTC"),
+                ("Open interest (USD)", f"{d.open_interest * d.mark_px / 1e6:.4f} M USD"),
+            )
+        ],
+    )
+    tech = _replace(TECH_BTC, period_return=0.159)
+    r = check_figures(informe, None, technicals=tech, derivatives=d)
+    assert [c.status for c in r] == ["verificada"] * 5 and {c.source for c in r} == {"mercado"}
+    assert r[0].matched == "Último cierre: 83,357.00" and r[1].matched == "Rentabilidad del periodo: 15.90 %"
+    assert r[2].matched == "RSI14: 75.0"
+    assert r[3].matched.endswith(" BTC") and r[3].matched.startswith("Open interest: ")
+    assert r[4].matched.endswith(" M USD")
+    assert not any("e+" in (c.matched or "") for c in r)
+
+
+def test_source_documento_y_sec_y_ninguna_si_no_se_verifica() -> None:
+    from finlens.sources.base import FundamentalFact, Fundamentals
+
+    fund = Fundamentals("A", 1, (FundamentalFact("Revenues", "Ingresos", 416.161e9, "USD", 2025, "2025-09-27", "10-K", "x"),))
+    doc = IngestedDocument(chunks=(Chunk(1, "Ventas de 39,864 millones."),), n_pages=1)
+    informe = AnalysisReport(
+        summary="r", spoken_summary="r",
+        key_figures=[
+            KeyFigure(name="v", value="39.864", citations=[Citation(origin="documento", location="p.1")]),
+            KeyFigure(name="Ingresos", value="$416.2 billion", citations=[Citation(origin="sec", location="")]),
+            KeyFigure(name="x", value="99.999", citations=[Citation(origin="documento", location="p.1")]),
+        ],
+    )
+    r = check_figures(informe, doc, fundamentals=fund)
+    assert [c.source for c in r] == ["documento", "sec", None]
+    assert r[1].matched == "Ingresos FY2025: 416,161 M USD"
+
+
+def test_el_mock_pide_la_unidad_del_open_interest() -> None:
+    r = correr(ticker="BTC")
+    oi = next(k for k in r.report.key_figures if k.name == "Open interest")
+    assert oi.value.endswith(" BTC")
+    assert any(c.figure_name == "Open interest" and c.status == "verificada" for c in r.figure_checks)

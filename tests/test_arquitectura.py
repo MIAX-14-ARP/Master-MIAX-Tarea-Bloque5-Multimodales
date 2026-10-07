@@ -78,3 +78,29 @@ def test_negocio_solo_depende_de_base_y_no_de_la_ui() -> None:
             if m.split(".")[0] == "streamlit" or m.startswith("finlens.ui"):
                 infractores.append(f"{f.relative_to(RAIZ)} importa {m}")
     assert not infractores, infractores
+
+
+def test_export_solo_depende_de_negocio_y_contratos() -> None:
+    """export/ puede usar domain, orchestration, providers.base y sources.base; ni SDKs de IA, HTTP ni UI."""
+    infractores = []
+    for f in ficheros("export"):
+        for m in importaciones(f):
+            raiz = m.split(".")[0]
+            if raiz in SDK_IA or raiz in HTTP or raiz == "streamlit" or m.startswith("finlens.ui"):
+                infractores.append(f"{f.relative_to(RAIZ)} importa {m}")
+            if m.startswith("finlens.providers") and m != "finlens.providers.base":
+                infractores.append(f"{f.relative_to(RAIZ)} importa {m}")
+            if m.startswith("finlens.sources") and m != "finlens.sources.base":
+                infractores.append(f"{f.relative_to(RAIZ)} importa {m}")
+    assert not infractores, infractores
+
+
+def test_ninguna_capa_inferior_importa_export() -> None:
+    """Solo la UI (y la app) consumen export/."""
+    infractores = [
+        f"{f.relative_to(RAIZ)} importa {m}"
+        for f in ficheros("domain", "orchestration", "providers", "sources")
+        for m in importaciones(f)
+        if m.startswith("finlens.export")
+    ]
+    assert not infractores, infractores

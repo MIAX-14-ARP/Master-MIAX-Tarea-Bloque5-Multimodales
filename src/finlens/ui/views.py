@@ -42,7 +42,7 @@ def show_report(result: AnalysisResult) -> None:
     """La nota de research: resumen, cifras selladas, gráfico, dirección, correlaciones, límites."""
     informe = result.report
     # Capitular solo si el resumen empieza por letra (no «(Simulado)…» ni comillas).
-    lede = "fl-lede has-drop" if informe.summary[:1].isalpha() else "fl-lede"
+    lede = "fl-lede"  # sin capitular: con tickers («BTC…») quedaba mal
     html(
         '<div class="fl-note"><div class="fl-kicker">Nota de análisis · pregunta</div>'
         f'<p class="fl-q">«{ui.esc(result.question)}»</p>'
@@ -55,8 +55,7 @@ def show_report(result: AnalysisResult) -> None:
         ))
     if informe.key_figures:
         checks = getattr(result, "figure_checks", ()) or ()
-        verificadas = sum(1 for c in checks if getattr(c, "status", "") == "verificada")
-        titulo = "Cifras clave" + (f" · {verificadas}/{len(checks)} verificadas en el PDF" if checks else "")
+        titulo = "Cifras clave" + (f" · {ui.verification_summary(informe.key_figures, checks)}" if checks else "")
         html(ui.subhead("§2", titulo) + ui.figures_html(informe.key_figures, checks))
         if not checks:
             html('<p class="fl-note-sm">Verificación determinista de cifras no disponible en esta versión.</p>')
@@ -82,7 +81,7 @@ def show_report(result: AnalysisResult) -> None:
     show_disclaimer()
 
 
-def show_inputs_read(result: AnalysisResult) -> None:
+def show_inputs_read(result: AnalysisResult, *, voz: bool = False) -> None:
     """Lo que el sistema entendió de cada modalidad, en tres columnas como las ranuras."""
     html(f'<div class="fl-kicker">Pregunta analizada</div><p class="fl-q">«{ui.esc(result.question)}»</p>')
     doc, graf, aud = st.columns(3, gap="large")
@@ -104,7 +103,8 @@ def show_inputs_read(result: AnalysisResult) -> None:
             html(ui.read_card("B · Gráfico", "", extra='<p class="fl-empty">No aportado o no se pudo leer.</p>'))
     with aud:
         if result.transcript:
-            html(ui.read_card("C · Audio", "", extra=f'<blockquote class="fl-quote">{ui.esc(result.transcript)}</blockquote>'))
+            clave = "C · Tu pregunta por voz (transcrita)" if voz else "C · Audio (transcripción)"
+            html(ui.read_card(clave, "", extra=f'<blockquote class="fl-quote">{ui.esc(result.transcript)}</blockquote>'))
         else:
             html(ui.read_card("C · Audio", "", extra='<p class="fl-empty">No aportado o no se pudo transcribir.</p>'))
 

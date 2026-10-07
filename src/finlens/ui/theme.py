@@ -265,8 +265,11 @@ a {{ color: var(--brass); }}
   max-width:60ch; line-height:1.4; }}
 .fl-lede {{ font-family:var(--f-display); font-size:23px !important; line-height:1.5 !important; color:var(--paper); max-width:62ch;
   font-weight:350; font-variation-settings:"opsz" 30; }}
-.fl-lede.has-drop::first-letter {{ float:left; font-size:3.4em; line-height:.82; padding:6px 10px 0 0; color:var(--brass);
-  font-weight:600; font-variation-settings:"opsz" 144; }}
+.fl-case {{ font:italic 15px/1.5 var(--f-display) !important; color:var(--paper-dim); margin:0 0 var(--s2); }}
+.fl-formats {{ list-style:none; padding:0; margin:0 0 var(--s2); }}
+.fl-formats li {{ font:13.5px/1.6 var(--f-body); color:var(--paper-dim); padding:4px 0; border-bottom:1px solid var(--rule); }}
+.fl-formats b {{ font:600 11px/1 var(--f-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--paper);
+  display:inline-block; min-width:110px; }}
 
 .fl-figs {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); border-top:1px solid var(--rule-strong);
   border-bottom:1px solid var(--rule-strong); }}
@@ -275,18 +278,21 @@ a {{ color: var(--brass); }}
 .fl-fig:last-child {{ border-right:0; }}
 .fl-fig__n {{ font:600 11px/1.3 var(--f-mono); letter-spacing:.14em; text-transform:uppercase; color:var(--paper-dim); }}
 .fl-fig__v {{ font:500 clamp(30px,4vw,42px)/1.05 var(--f-mono); color:var(--paper); margin:var(--s2) 0 6px;
-  font-variant-numeric:tabular-nums; letter-spacing:-.03em; overflow-wrap:anywhere; }}
+  font-variant-numeric:tabular-nums; letter-spacing:-.03em; white-space:nowrap; overflow-wrap:normal; }}
+.fl-fig__v.is-m {{ font-size:clamp(26px,3vw,32px); }}
+.fl-fig__v.is-s {{ font-size:clamp(20px,2.3vw,24px); letter-spacing:-.02em; }}
+.fl-fig__v.is-xs {{ font-size:clamp(16px,1.8vw,19px); letter-spacing:-.01em; }}
+.fl-fig__v.is-long {{ font-size:clamp(17px,2vw,21px); line-height:1.3; letter-spacing:0; white-space:normal; word-break:keep-all; }}
 .fl-fig__p {{ font:12px/1.4 var(--f-mono); color:var(--muted); }}
 .fl-fig__foot {{ display:flex; gap:var(--s2); align-items:center; flex-wrap:wrap; margin-top:var(--s3); }}
 
 .fl-stamp {{ display:inline-block; font:700 10px/1 var(--f-mono); letter-spacing:.16em; text-transform:uppercase;
-  padding:6px 8px 5px; border:1.5px solid currentColor; transform:rotate(-2.5deg);
-  animation:fl-stamp .45s cubic-bezier(.2,.9,.3,1.2) both; }}
+  padding:6px 8px 5px; border:1.5px solid currentColor; white-space:normal; overflow-wrap:anywhere; max-width:100%; line-height:1.35; animation:fl-stamp .3s ease-out both; }}
 .fl-stamp.v {{ color:var(--up); box-shadow:inset 0 0 0 1px rgba(108,195,138,.25); }}
 .fl-stamp.x {{ color:var(--down); }}
 .fl-stamp.s {{ color:var(--paper-dim); border-style:dashed; }}
 .fl-stamp.u {{ color:var(--muted); border-style:dotted; transform:none; }}
-@keyframes fl-stamp {{ from {{ opacity:0; transform:rotate(-8deg) scale(1.35); }} to {{ opacity:1; transform:rotate(-2.5deg) scale(1); }} }}
+@keyframes fl-stamp {{ from {{ opacity:0; }} to {{ opacity:1; }} }}
 
 .fl-chip {{ display:inline-flex; align-items:center; gap:5px; font:500 10.5px/1 var(--f-mono); letter-spacing:.06em;
   padding:4px 6px; border:1px solid var(--rule-strong); color:var(--paper-dim); white-space:nowrap; margin:2px 4px 2px 0; }}
@@ -381,7 +387,9 @@ a {{ color: var(--brass); }}
 .fl-kvs {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); border-top:1px solid var(--rule-strong); }}
 .fl-kv {{ padding:var(--s2) var(--s3) var(--s2) 0; border-bottom:1px solid var(--rule); }}
 .fl-kv__k {{ font:600 10px/1.3 var(--f-mono); letter-spacing:.12em; text-transform:uppercase; color:var(--muted); }}
-.fl-kv__v {{ font:500 20px/1.3 var(--f-mono); color:var(--paper); font-variant-numeric:tabular-nums; margin-top:4px; overflow-wrap:anywhere; }}
+.fl-kv__v {{ font:500 20px/1.3 var(--f-mono); color:var(--paper); font-variant-numeric:tabular-nums; margin-top:4px;
+  white-space:nowrap; overflow-wrap:normal; }}
+.fl-kv__v.is-long {{ font-size:15px; white-space:normal; word-break:keep-all; }}
 .fl-kv__v.is-list {{ font-size:14px; }}
 .fl-kv:has(.is-list) {{ grid-column:span 2; }}
 .fl-contrast-mini {{ display:flex; gap:var(--s2); align-items:center; flex-wrap:wrap; margin-top:var(--s2);

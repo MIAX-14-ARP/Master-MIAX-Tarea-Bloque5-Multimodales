@@ -20,7 +20,10 @@ Decisiones:
 |---|---|
 | EC2 + Caddy, no App Runner | App Runner no admite WebSocket y Streamlit lo necesita |
 | EC2, no ECS Fargate + ALB | El ALB solo cuesta ~16 USD/mes; el presupuesto del máster es 14 USD/mes |
-| OIDC entre GitHub y AWS | No hay claves de AWS de larga duración en GitHub; el rol solo vale para `master` de este repo |
+| OIDC entre GitHub y AWS | No hay claves de AWS de larga duración en GitHub; el rol solo confía en el environment `produccion` de este repo, limitado a `master` |
+| Despliegue solo tras push a master del propio repo | `workflow_run` tiene secretos: un PR desde un fork nunca despliega |
+| IMDSv2 con hop limit 1 | Los contenedores no pueden leer las credenciales del rol de la instancia |
+| Actions fijadas por SHA | Evita que un tag movido inyecte código en un job con secretos |
 | SSM en vez de SSH | Sin puerto 22 abierto ni claves SSH |
 | Secretos en Secrets Manager | La clave de OpenRouter nunca está en la imagen ni en el repo; la instancia la lee con su rol |
 | `APP_PASSWORD` | La demo es pública y cada análisis gasta crédito real |
@@ -37,12 +40,15 @@ Bórralo tras la evaluación (ver al final).
    personalizados* → *Enviar*. Tarda ~3 min. Si la cuenta ya tuviera el proveedor OIDC de GitHub, pon
    `CreateOidcProvider=false`.
 2. En la pestaña **Salidas** de la pila copia `DeployRoleArn`, `InstanceId` y `PublicUrl`.
-3. **Variables y secretos del repositorio de GitHub** (los puede poner el agente con `gh`, o tú en
-   *Settings → Secrets and variables → Actions*):
-   - Variables: `AWS_DEPLOY_ROLE_ARN` = `DeployRoleArn`, `FINLENS_INSTANCE_ID` = `InstanceId`.
-   - Secretos: `OPENROUTER_API_KEY` (mejor una clave **aparte con límite de gasto** creada en
-     openrouter.ai → Keys) y `APP_PASSWORD`.
-   - Entorno `produccion` (Settings → Environments): opcional, para exigir aprobación manual.
+3. **Environment `produccion` en GitHub** (Settings → Environments → *New environment* → `produccion`):
+   - *Deployment branches and tags* → *Selected branches* → `master` (obligatorio: el rol de AWS solo confía
+     en tokens de este environment).
+   - Opcional: *Required reviewers* para aprobar cada despliegue a mano.
+   - Variables **del repositorio** (Settings → Secrets and variables → Actions → *Variables*; deben ser de
+     repo porque el `if` del job las lee antes de entrar en el environment): `AWS_DEPLOY_ROLE_ARN` =
+     `DeployRoleArn`, `FINLENS_INSTANCE_ID` = `InstanceId`.
+   - Secretos del environment: `OPENROUTER_API_KEY` (mejor una clave **aparte con límite de gasto**,
+     openrouter.ai → Keys) y `APP_PASSWORD` (obligatoria: sin ella el workflow no despliega).
 4. **Desplegar**: cada push a `master` con la CI en verde despliega solo; o Actions → *Deploy (AWS)* →
    *Run workflow*.
 5. Abre `PublicUrl`. La primera vez Caddy tarda ~1 min en obtener el certificado.
@@ -55,6 +61,5 @@ Bórralo tras la evaluación (ver al final).
 
 ## Borrar todo tras la evaluación
 
-1. ECR → `finlens` → borrar imágenes.
-2. CloudFormation → pila `finlens` → *Eliminar* (borra instancia, IP, roles, OIDC, alarma).
-3. Secrets Manager → `finlens/app` se programa para borrarse (7–30 días) al eliminar la pila.
+1. CloudFormation → pila `finlens` → *Eliminar* (borra instancia, IP, roles, OIDC y el repositorio ECR con sus imágenes).
+2. Secrets Manager → `finlens/app` se programa para borrarse (7–30 días) al eliminar la pila.
