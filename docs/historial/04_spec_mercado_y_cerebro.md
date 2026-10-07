@@ -1,6 +1,6 @@
 # 06 · Spec ronda 3: datos de mercado reales + "cerebro" animado
 
-Continúa `docs/05_SPEC_MEJORAS.md` (sus reglas §0 aplican igual: cero alucinaciones, estilo del repo, capas,
+Continúa `03_spec_openrouter_y_calidad.md` (sus reglas §0 aplican igual: cero alucinaciones, estilo del repo, capas,
 nunca leer `.env`, tests sin red).
 
 ## 10. Datos de mercado reales y verificación cruzada visión ↔ datos
