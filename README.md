@@ -14,9 +14,8 @@ crédito real; pídela al equipo) · **Vídeo de la demo (2:52):** [`docs/video/
 
 [![Vídeo de la demo de FinLens (2:52): pulsa para verlo](docs/img/readme/video.jpg)](docs/video/FinLens_demo.mp4)
 
-*▶ Vídeo de la demo (2:52, 1080p, con APIs reales): caso Inditex con PDF, gráfico, audio y ticker, y caso BTC
-preguntando por voz. Pulsa la imagen para verlo; si el navegador no lo reproduce, usa «View raw» para
-descargarlo. Subtítulos en [`docs/video/FinLens_demo.srt`](docs/video/FinLens_demo.srt).*
+*▶ Vídeo de la demo (2:52): caso Inditex con PDF, gráfico, audio y ticker, y caso BTC preguntando por voz.
+Pulsa la imagen para verlo; si el navegador no lo reproduce, usa «View raw» para descargarlo.*
 
 **En una frase:** FinLens cruza el informe anual (PDF), el gráfico, el audio de la conferencia y los datos de
 mercado de una cotizada en una nota de research donde **cada cifra cita su fuente y la verifica el código**,
@@ -374,7 +373,7 @@ de la visión confirmadas)
 ├── deploy/                     # CloudFormation (AWS) y script de despliegue
 ├── .github/workflows/          # CI (ruff, mypy, pytest) y despliegue a AWS
 ├── tests/                      # más de 800 tests (mocks y respuestas reales grabadas)
-└── docs/                       # propuesta y pitch (PDF), medidas, despliegue, guion del vídeo, enunciado, historial/
+└── docs/                       # propuesta y pitch (PDF), medidas, despliegue, vídeo de la demo, enunciado, historial/
 ```
 
 ## Aviso legal
