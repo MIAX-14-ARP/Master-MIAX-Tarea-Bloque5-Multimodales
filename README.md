@@ -142,7 +142,7 @@ con el motivo del fallo); degradación elegante (si falla un paso opcional se en
 contenido de documentos tratado como datos, no instrucciones (*prompt injection*); detección de STT
 truncado con reintento; razonamiento del LLM acotado (`OPENROUTER_REASONING_EFFORT`) para no cortar el JSON.
 
-Las especificaciones de cada iteración (producto inicial, OpenRouter y calidad, mercado y cerebro) están en
+La especificación y la arquitectura de la primera versión están en
 [`docs/historial/`](docs/historial/README.md).
 
 ## 4. Instalación y ejecución (plug-and-play)
