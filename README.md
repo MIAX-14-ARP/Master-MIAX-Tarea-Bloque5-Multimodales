@@ -22,7 +22,7 @@ descargarlo. Subtítulos en [`docs/video/FinLens_demo.srt`](docs/video/FinLens_d
 mercado de una cotizada en una nota de research donde **cada cifra cita su fuente y la verifica el código**,
 no el LLM. Cuesta **0,06 USD** y tarda **≈31 s** por análisis completo (medido con APIs reales).
 
-### Qué pide el enunciado y dónde está
+### Tareas
 
 | Enunciado del taller | Dónde verlo |
 |---|---|
