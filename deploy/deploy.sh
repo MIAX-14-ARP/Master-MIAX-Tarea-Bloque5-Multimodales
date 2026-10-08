@@ -16,6 +16,11 @@ IP=$(curl -sf -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/lates
 HOST="${IP//./-}.sslip.io"
 
 aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$REGISTRO"
+# Disco pequeño (12 GB) e imágenes de ~1,5 GB: antes de descargar la nueva se borran las que no usa ningún
+# contenedor (la versión en marcha sigue en uso y se conserva para poder volver atrás si el pull falla).
+docker image prune -af >/dev/null 2>&1 || true
+docker builder prune -af >/dev/null 2>&1 || true
+echo "Disco libre antes del pull: $(df -h / | awk 'NR==2 {print $4}')"
 docker pull "$IMAGEN"
 
 # Secretos -> fichero de entorno legible solo por root (no se imprime nada).
@@ -41,7 +46,7 @@ fi
 # Espera a que la app responda (healthcheck de Streamlit) antes de dar el despliegue por bueno.
 for _ in $(seq 1 30); do
   if docker exec finlens python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')" 2>/dev/null; then
-    docker image prune -af --filter "until=72h" >/dev/null 2>&1 || true
+    docker image prune -af >/dev/null 2>&1 || true  # tras el cambio, la versión anterior ya no se usa
     echo "FinLens desplegado en https://$HOST ($IMAGEN)"
     exit 0
   fi
