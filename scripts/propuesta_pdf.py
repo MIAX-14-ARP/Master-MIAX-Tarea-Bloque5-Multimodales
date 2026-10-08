@@ -28,7 +28,7 @@ DESTINO = RAIZ / "docs" / "propuesta_mvpFinlens.pdf"
 URL_DEMO = "https://108-128-114-211.sslip.io"
 PASSWORD_DEMO = os.environ.get("FINLENS_DEMO_PASSWORD", "")  # no se guarda en el código: ver --password
 REPO = "https://github.com/piettro/Master-MIAX-Tarea-Bloque5-Multimodales"
-EQUIPO = "Piettro Rodrigues, Alonso y Raúl Rodríguez"
+EQUIPO = "Piettro Rodrigues, Alonso Díaz y Raúl Rodríguez"
 
 # --- Hipótesis de negocio (editables) ----------------------------------------------------------
 COSTE_ANALISIS_EUR = 0.055  # ≈ 0,060 USD con 1 USD ≈ 0,92 €

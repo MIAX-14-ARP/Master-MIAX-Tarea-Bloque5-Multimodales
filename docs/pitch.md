@@ -3,7 +3,7 @@
 **Research financiero multimodal con cifras verificadas.** Informe anual, gráfico, conferencia de resultados y
 datos de mercado en una nota donde cada cifra cita su fuente y la verifica el código.
 
-> Piettro Rodrigues · Alonso · Raúl Rodríguez — Taller B5-T4, Máster MIAX (Instituto BME) · 8 de octubre de 2026.
+> Piettro Rodrigues · Alonso Díaz · Raúl Rodríguez — Taller B5-T4, Máster MIAX (Instituto BME) · 8 de octubre de 2026.
 > Startup ficticia (práctica de máster). Cifras medidas con APIs reales el 7-oct-2026 (`docs/medidas.md`).
 
 ---
