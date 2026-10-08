@@ -3,7 +3,7 @@
 [![CI](https://github.com/piettro/Master-MIAX-Tarea-Bloque5-Multimodales/actions/workflows/ci.yml/badge.svg)](https://github.com/piettro/Master-MIAX-Tarea-Bloque5-Multimodales/actions/workflows/ci.yml)
 
 > Taller B5-T4 · Máster en IA y computación cuantitativa aplicada a mercados financieros (Instituto BME)
-> Equipo: **Piettro Rodrigues, Alonso y Raúl Rodríguez** · Entrega: 8 de octubre de 2026
+> Equipo: **Piettro Rodrigues, Alonso Díaz y Raúl Rodríguez** · Entrega: 8 de octubre de 2026
 >
 > *Startup ficticia creada como práctica de máster: el modelo de negocio es un ejercicio, no una oferta real.*
 

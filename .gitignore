@@ -28,3 +28,6 @@ samples/.cache/
 
 # Notas locales de trabajo (no forman parte de la entrega)
 claude.md.md
+
+# Material de entrega generado (vídeo de la demo): no se versiona
+entrega/
