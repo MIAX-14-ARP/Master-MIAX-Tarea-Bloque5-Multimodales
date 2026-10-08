@@ -8,11 +8,15 @@
 > *Startup ficticia creada como práctica de máster: el modelo de negocio es un ejercicio, no una oferta real.*
 
 **Demo desplegada (AWS):** <https://108-128-114-211.sslip.io> (protegida con contraseña: cada análisis gasta
-crédito real; pídela al equipo) · **Vídeo de la demo (3–5 min):** **[PENDIENTE: enlace]**
+crédito real; pídela al equipo) · **Vídeo de la demo (2:52):** [`docs/video/FinLens_demo.mp4`](docs/video/FinLens_demo.mp4)
 **Propuesta de MVP (PDF, punto 4.1 del enunciado):** [`docs/propuesta_mvpFinlens.pdf`](docs/propuesta_mvpFinlens.pdf)
 · **Pitch:** [`docs/pitch.pdf`](docs/pitch.pdf) · **Informe de costes y latencias:** [`docs/medidas.md`](docs/medidas.md)
 
-![Pantalla principal de FinLens](docs/img/readme/home.png)
+[![Vídeo de la demo de FinLens (2:52): pulsa para verlo](docs/img/readme/video.jpg)](docs/video/FinLens_demo.mp4)
+
+*▶ Vídeo de la demo (2:52, 1080p, con APIs reales): caso Inditex con PDF, gráfico, audio y ticker, y caso BTC
+preguntando por voz. Pulsa la imagen para verlo; si el navegador no lo reproduce, usa «View raw» para
+descargarlo. Subtítulos en [`docs/video/FinLens_demo.srt`](docs/video/FinLens_demo.srt).*
 
 **En una frase:** FinLens cruza el informe anual (PDF), el gráfico, el audio de la conferencia y los datos de
 mercado de una cotizada en una nota de research donde **cada cifra cita su fuente y la verifica el código**,
@@ -30,7 +34,7 @@ no el LLM. Cuesta **0,06 USD** y tarda **≈31 s** por análisis completo (medid
 | 4.2 Diversidad de modalidades y orquestación de varios modelos | [§2](#2-qué-hace-demo-en-30-segundos) y [§3](#3-arquitectura-y-flujo-de-datos-multimodal) |
 | 4.3 MVP operativo, UI/UX, robustez y plug-and-play | [§4](#4-instalación-y-ejecución-plug-and-play) y [§9](#9-capturas) |
 | 4.4 README con capturas, diagrama de flujo y arquitectura; pitch; modularidad | [§3](#3-arquitectura-y-flujo-de-datos-multimodal), [§8](#8-pitch-técnico), [§9](#9-capturas) |
-| 5. Entregables: repositorio y demo funcional | Este repositorio · demo (enlace arriba) · vídeo **[PENDIENTE]** |
+| 5. Entregables: repositorio y demo funcional | Este repositorio · demo en AWS (enlace arriba) · [vídeo de la demo](docs/video/FinLens_demo.mp4) |
 
 ## 1. Problema y propuesta de valor
 
