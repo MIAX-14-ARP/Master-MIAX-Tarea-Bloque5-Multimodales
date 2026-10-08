@@ -31,3 +31,7 @@ claude.md.md
 
 # Material de entrega generado (vídeo de la demo): no se versiona
 entrega/
+
+# Especificaciones internas de trabajo (no forman parte de la entrega)
+docs/historial/03_spec_openrouter_y_calidad.md
+docs/historial/04_spec_mercado_y_cerebro.md
